@@ -23,7 +23,8 @@ import requests
 
 import db
 
-UA = {"User-Agent": "stock-tracker personal research (https://github.com/berteniris-spec/Stock-Tracker)"}
+# SEC fair-access policy: declare who you are, with a contact address. A noreply address is used here.
+UA = {"User-Agent": "stock-tracker personal research berteniris-spec@users.noreply.github.com"}
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 FUNDS_URL = "https://www.sec.gov/files/company_tickers_mf.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
@@ -79,7 +80,8 @@ def sic_to_sector(sic):
 def fetch_json(url):
     time.sleep(DELAY)
     r = requests.get(url, headers=UA, timeout=30)
-    r.raise_for_status()
+    if not r.ok:
+        raise RuntimeError(f"HTTP {r.status_code} for {url}: {r.text[:300]!r}")
     return r.json()
 
 
