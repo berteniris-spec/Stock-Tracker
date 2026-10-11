@@ -71,6 +71,11 @@ def test_parse_text():
 
 
 def test_pdf_roundtrip():
+    try:
+        import reportlab  # noqa: F401  (only needed to build the fixture PDF)
+    except ImportError:
+        print("  skipped: reportlab not installed")
+        return
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "x.pdf"
         make_pdf(p, PTR_LINES)

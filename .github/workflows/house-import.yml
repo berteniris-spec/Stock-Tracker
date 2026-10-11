@@ -18,24 +18,35 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt
-      - run: python tests/test_house_importer.py
-      - run: python ingest_committees.py
-      - name: Import House PTRs
-        run: python house_importer.py --year "${{ inputs.year }}" ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
-      - name: Summary
+      - run: pip install -r requirements.txt reportlab
+      - name: Test, ingest committees, import House PTRs
+        shell: bash
         run: |
-          python - <<'PY'
+          {
+            python tests/test_house_importer.py
+            python ingest_committees.py
+            python house_importer.py --year "${{ inputs.year }}" ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
+            python - <<'PY'
           import db
           c = db.connect()
-          print("filings by status:", c.execute("select status, count(*) from filings group by status").fetchall() and
-                [tuple(r) for r in c.execute("select status, count(*) from filings group by status")])
-          print("partial/no_text examples:")
-          for r in c.execute("select doc_id, filer, status, rows_parsed, markers from filings where status in ('partial','no_text') limit 10"):
+          print("filings by status:", [tuple(r) for r in c.execute("select status, count(*) from filings group by status")])
+          print("partial / no_text examples (doc_id, filer, status, parsed, markers):")
+          for r in c.execute("select doc_id, filer, status, rows_parsed, markers from filings where status in ('partial','no_text') limit 8"):
               print("  ", tuple(r))
-          print("sample trades:")
-          for r in c.execute("select m.name, t.tx_date, t.ticker, t.asset, t.tx_type, t.owner, t.amount_label from trades t join members m using(bioguide_id) order by t.id limit 12"):
+          print("sample trades (member, date, ticker, asset, type, owner, amount):")
+          for r in c.execute("select m.name, t.tx_date, t.ticker, t.asset, t.tx_type, t.owner, t.amount_label from trades t join members m using(bioguide_id) order by t.id limit 15"):
               print("  ", tuple(r))
+          PY
+          } 2>&1 | tee run.log
+      - name: Publish log as an annotation
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          lines = open("run.log", errors="replace").read().splitlines() if os.path.exists("run.log") else ["(no log)"]
+          body = "\n".join(l[:240] for l in lines[-70:])[-3800:]
+          body = body.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+          print(f"::notice title=House import log::{body}")
           PY
       - uses: actions/upload-artifact@v4
         with:
