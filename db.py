@@ -260,7 +260,7 @@ def monthly_volume(con):
     return _df(con, """
         SELECT substr(tx_date, 1, 7) AS month, tx_type,
                COALESCE(SUM(amount_est), 0) AS est_volume
-        FROM trades WHERE tx_date IS NOT NULL
+        FROM trades WHERE tx_date IS NOT NULL AND tx_date <= COALESCE(disclosure_date, tx_date)
         GROUP BY month, tx_type ORDER BY month""")
 
 

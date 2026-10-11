@@ -20,6 +20,7 @@ import argparse
 import re
 import sys
 import time
+import unicodedata
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -56,6 +57,21 @@ def iso(d):
     return datetime.strptime(d, "%m/%d/%Y").date().isoformat()
 
 
+def clean_text(text):
+    text = text.replace("\x00", "")
+    text = HEADER_LINE.sub("", text)                    # table header repeats at page breaks, even mid-row
+    return re.sub(r"[ \t]+", " ", text)
+
+
+def unparsed_markers(text, context=(250, 150)):
+    """Snippets around "[XX]" markers that no parsed row consumed (for debugging partial filings)."""
+    clean = clean_text(text)
+    rows, _ = parse_ptr_text(text)
+    used = {r["_pos"] for r in rows}
+    return [clean[max(0, m.start() - context[0]):m.end() + context[1]].replace("\n", " / ")
+            for m in MARKER.finditer(clean) if m.start() not in used]
+
+
 def _complete_amount(amount, *chunks):
     """Finish an amount that wrapped across lines ("$15,001 -" ... "$50,000")."""
     if not amount.endswith("-"):
@@ -75,9 +91,7 @@ def parse_ptr_text(text):
       split  : [OWNER] Long Name start         P  DATE  DATE  $a - $b      (amount may wrap)
                name continuation (TICK) [ST]   [rest of wrapped amount]
     """
-    text = text.replace("\x00", "")
-    text = HEADER_LINE.sub("", text)                    # table header repeats at page breaks, even mid-row
-    text = re.sub(r"[ \t]+", " ", text)
+    text = clean_text(text)
     heads = list(HEAD.finditer(text))
     starts = [text.rfind("\n", 0, h.start()) + 1 for h in heads] + [len(text)]
     rows = []
@@ -86,6 +100,7 @@ def parse_ptr_text(text):
         tail = text[h.end():starts[i + 1]]
         amount = re.sub(r"\s+", " ", h.group("amount"))
         pm = MARKER.search(pre)
+        pos = starts[i] + pm.start() if pm else None
         if pm:                                           # inline layout
             atype, name_part, rest = pm.group("atype"), pre[:pm.start()].strip(), tail[:60]
             amount = _complete_amount(amount, rest)
@@ -95,6 +110,7 @@ def parse_ptr_text(text):
             if not mk:
                 continue
             atype, name_part, cont = mk.group("atype"), pre, tail[:mk.start()]
+            pos = h.end() + mk.start()
             m2 = re.search(r"\$[\d,]+", cont) if amount.endswith("-") else None
             if m2:                                       # wrapped amount's tail sits before the marker
                 cont = cont[:m2.start()] + cont[m2.end():]
@@ -123,7 +139,7 @@ def parse_ptr_text(text):
         asset = re.sub(r"\s+", " ", f"{name_part} {cont}").strip()[-80:].strip()
         ttype = re.sub(r"\s+", " ", h.group("ttype")).replace("( ", "(")
         rows.append({
-            "ticker": ticker, "asset": asset, "owner": owner, "asset_type": atype,
+            "ticker": ticker, "asset": asset, "owner": owner, "asset_type": atype, "_pos": pos,
             "tx_type": TX_TYPES.get(ttype, ttype),
             "tx_date": iso(h.group("tx")), "disclosure_date": iso(h.group("notif")), "amount": amount})
     return rows, len(MARKER.findall(text))
@@ -144,19 +160,34 @@ def parse_index_xml(xml_bytes):
 
 
 def _norm(s):
-    return re.sub(r"[^a-z]", "", (s or "").lower())
+    s = unicodedata.normalize("NFKD", s or "")
+    return re.sub(r"[^a-z]", "", "".join(ch for ch in s if not unicodedata.combining(ch)).lower())
+
+
+def _last_ok(want, have):
+    have = _norm(have)
+    return bool(have) and (want == have or want.endswith(have) or have.endswith(want))
+
+
+def _first_ok(want, have):
+    want, have = _norm(want), _norm(have)
+    return bool(want) and bool(have) and (want.startswith(have) or have.startswith(want))
 
 
 def match_member(con, rec):
-    """Match a filing to a current House member by state + district + last name."""
-    rows = con.execute(
-        "SELECT bioguide_id, last_name FROM members "
-        "WHERE chamber='House' AND state=? AND district=? AND source='congress-legislators'",
-        (rec["state"], rec["district"])).fetchall()
+    """Match a filing to a current House member.
+
+    Primary: state + district + last name. Fallback (filings sometimes carry a stale district):
+    state + last name + a compatible first name, accepted only when exactly one member fits.
+    """
     want = _norm(rec["last"])
-    hits = [r["bioguide_id"] for r in rows
-            if _norm(r["last_name"]) == want or want.endswith(_norm(r["last_name"]))
-            or _norm(r["last_name"]).endswith(want)]
+    rows = con.execute(
+        "SELECT bioguide_id, last_name, first_name, district FROM members "
+        "WHERE chamber='House' AND state=? AND source='congress-legislators'", (rec["state"],)).fetchall()
+    hits = [r["bioguide_id"] for r in rows if r["district"] == rec["district"] and _last_ok(want, r["last_name"])]
+    if len(hits) == 1:
+        return hits[0]
+    hits = [r["bioguide_id"] for r in rows if _last_ok(want, r["last_name"]) and _first_ok(rec["first"], r["first_name"])]
     return hits[0] if len(hits) == 1 else None
 
 
@@ -224,17 +255,19 @@ def main():
     ap.add_argument("--year", type=int, default=datetime.now().year)
     ap.add_argument("--limit", type=int, help="process at most N new filings (for testing)")
     ap.add_argument("--refresh-index", action="store_true")
-    ap.add_argument("--debug", metavar="DOC_ID", help="print extracted text and parsed rows for one filing")
+    ap.add_argument("--debug", metavar="DOC_ID", help="show parse counts and the text around unparsed rows for one filing")
+    ap.add_argument("--full", action="store_true", help="with --debug: also print the full extracted text")
     args = ap.parse_args()
 
     if args.debug:
         pdf = _get(f"{BASE}/ptr-pdfs/{args.year}/{args.debug}.pdf", CACHE / str(args.year) / f"{args.debug}.pdf")
         text = extract_text(pdf)
-        print(text)
         rows, markers = parse_ptr_text(text)
-        print(f"\n--- parsed {len(rows)} rows, {markers} markers ---")
-        for r in rows:
-            print(r)
+        print(f"--- parsed {len(rows)} rows, {markers} markers ---")
+        for snip in unparsed_markers(text):
+            print("UNPARSED:", snip)
+        if args.full:
+            print(text)
         return
 
     con = db.connect()

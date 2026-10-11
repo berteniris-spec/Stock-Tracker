@@ -107,6 +107,14 @@ def test_inline_variants():
     assert rows[2]["amount"] == "$15,001 - $50,000"
 
 
+def test_unparsed_markers():
+    txt = "Foo Corp (FOO) [ST] P 01/01/2026 01/02/2026 $1,001 - $15,000\nF S: New\nMystery row [ST] with no head line"
+    rows, markers = hi.parse_ptr_text(txt)
+    assert len(rows) == 1 and markers == 2
+    snips = hi.unparsed_markers(txt)
+    assert len(snips) == 1 and "Mystery row" in snips[0]
+
+
 def test_pdf_roundtrip():
     try:
         import reportlab  # noqa: F401  (only needed to build the fixture PDF)
@@ -135,6 +143,15 @@ def test_index_and_matching():
         assert hi.match_member(con, recs[0]) == "E000001"
         assert hi.match_member(con, recs[1]) is None          # former member in the same district
         assert hi.match_member(con, recs[2]) == "D000001"     # at-large district, multi-word surname
+        con.execute("INSERT INTO members(bioguide_id,name,chamber,state,party,last_name,first_name,district,source) "
+                    "VALUES ('S000001','Linda T. Sánchez','House','CA','D','Sánchez','Linda',38,'congress-legislators'),"
+                    "('M000001','Rich McCormick','House','GA','R','McCormick','Rich',7,'congress-legislators')")
+        accent = {"last": "Sanchez", "first": "Linda T.", "state": "CA", "district": 38}
+        assert hi.match_member(con, accent) == "S000001"       # accents ignored
+        stale = {"last": "Dr McCormick", "first": "Richard Dean Dr", "state": "GA", "district": 6}
+        assert hi.match_member(con, stale) == "M000001"        # stale district -> state + last + first-name prefix
+        other = {"last": "McCormick", "first": "Zed", "state": "GA", "district": 6}
+        assert hi.match_member(con, other) is None             # different first name: refuse to guess
         # insert + dedupe
         rows, _ = hi.parse_ptr_text("\n".join(PTR_LINES))
         ins = lambda: sum(db.insert_trade(con, "E000001", r["tx_date"], r["ticker"], r["tx_type"], r["amount"],
