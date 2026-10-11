@@ -305,6 +305,35 @@ def monthly_volume(con):
         GROUP BY month, tx_type ORDER BY month""")
 
 
+def paper_filings(con, bioguide_id=None):
+    """Paper (scanned) filings that couldn't be imported, with a link to each original PDF."""
+    cols = ["doc_id", "year", "bioguide_id", "member", "url"]
+    sql = ("SELECT f.doc_id, f.year, f.bioguide_id, m.name AS member FROM filings f "
+           "JOIN members m USING (bioguide_id) WHERE f.status = 'no_text'")
+    params = ()
+    if bioguide_id:
+        sql += " AND f.bioguide_id = ?"
+        params = (bioguide_id,)
+    try:
+        df = _df(con, sql + " ORDER BY m.name, f.year DESC, f.doc_id", params)
+    except Exception:                      # older database without a filings table
+        return pd.DataFrame(columns=cols)
+    df["url"] = ("https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/"
+                 + df["year"].astype(str) + "/" + df["doc_id"] + ".pdf")
+    return df[cols]
+
+
+def paper_only_members(con):
+    """Members with paper filings but no imported trades: absent from the trade tables, so list them."""
+    try:
+        return _df(con, """
+            SELECT bioguide_id, name, chamber, state FROM members
+            WHERE bioguide_id IN (SELECT bioguide_id FROM filings WHERE status = 'no_text')
+              AND bioguide_id NOT IN (SELECT bioguide_id FROM trades)""")
+    except Exception:
+        return pd.DataFrame(columns=["bioguide_id", "name", "chamber", "state"])
+
+
 def all_tickers(con):
     return [r[0] for r in con.execute(
         "SELECT DISTINCT ticker FROM trades WHERE ticker IS NOT NULL AND ticker <> '' ORDER BY ticker")]

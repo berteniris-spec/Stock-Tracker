@@ -72,6 +72,16 @@ st.caption("Volume is estimated from disclosure ranges (midpoint by default; swi
            "Filings can lag trades by up to 45 days. Committee data is a current snapshot, "
            "not membership as of each trade date.")
 
+paper = db.paper_filings(con)
+if not paper.empty:
+    st.info(f"**Coverage gap:** {len(paper)} paper filings from {paper['bioguide_id'].nunique()} members are not "
+            "imported (scanned forms with handwritten or ticked-box entries can't be read reliably). "
+            "A member with no trades listed here may still have traded.")
+    with st.expander("Which filings are missing?"):
+        st.dataframe(paper[["member", "year", "doc_id", "url"]], hide_index=True, use_container_width=True,
+                     column_config={"url": st.column_config.LinkColumn("Original filing", display_text="open PDF"),
+                                    "doc_id": "Filing ID", "year": "Year", "member": "Member"})
+
 page = st.sidebar.radio("View", ["Overview", "Member", "Committee", "Ticker"])
 basis = st.sidebar.radio(
     "Volume basis", ["Midpoint estimate", "Filed minimum"],
@@ -103,13 +113,20 @@ if page == "Overview":
 
 elif page == "Member":
     members = db.members_with_trades(con)
-    if members.empty:
+    only_paper = db.paper_only_members(con)
+    if members.empty and only_paper.empty:
         st.info("No trades loaded yet.")
         st.stop()
     labels = {r.bioguide_id: f"{r.name} ({r.chamber}, {r.state or ''})" for r in members.itertuples()}
+    labels.update({r.bioguide_id: f"{r.name} ({r.chamber}, {r.state or ''}) - paper filings only"
+                   for r in only_paper.itertuples()})
     bid = st.selectbox("Member", list(labels), format_func=labels.get)
     mc = db.member_committees(con, bid)
     tr = db.member_trades(con, bid)
+    mp = db.paper_filings(con, bid)
+    if not mp.empty:
+        st.warning(f"{len(mp)} paper filing(s) by this member are not imported, so the trades below may be "
+                   "incomplete: " + ", ".join(f"[{r.doc_id}]({r.url})" for r in mp.itertuples()))
     a, b, c = st.columns(3)
     a.metric("Trades", len(tr))
     b.metric(vol_label, usd(db.volume_of(tr)))
