@@ -74,8 +74,8 @@ st.caption("Volume is estimated from disclosure ranges (midpoint by default; swi
 
 known, total = db.sector_coverage(con)
 if total:
-    st.caption(f"Sector is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%). Sectors come from SEC "
-               "SIC codes and are approximate; the committee-relevance flag only applies where a sector is known.")
+    st.caption(f"Sector is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%). Sectors come from the FinanceDatabase classification "
+               "and are approximate; the committee-relevance flag only applies where a sector is known.")
 
 paper = db.paper_filings(con)
 if not paper.empty:
