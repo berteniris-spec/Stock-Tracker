@@ -121,7 +121,7 @@ def parse_amount(label):
 
 
 def connect(path=DB_PATH):
-    con = sqlite3.connect(path)
+    con = sqlite3.connect(path, check_same_thread=False)  # Streamlit reruns on different threads
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
     return con
