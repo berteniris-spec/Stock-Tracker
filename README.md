@@ -45,13 +45,21 @@ Run it from the **House import** GitHub Action if your own network blocks the Cl
 
 Run the offline tests with `python tests/test_house_importer.py`.
 
+## Sectors
+
+`python enrich_sectors.py` fills a sector for every ticker from the FinanceDatabase CSVs (GICS-style, US venues),
+mapped to the coarse buckets in `db.py`. It only fills gaps: `sectors.csv` (`ticker,sector`) overrides win, then the
+starter map in `db.py`, then the lookup. The nightly workflow runs it. (The SEC's SIC codes would also work, but
+sec.gov blocks GitHub-hosted runners, so they aren't used.) Trades with no ticker (notes, annuities, LP interests)
+can't be classified this way.
+
 ## Notes and limits
 
 - **Volume is an estimate.** Filings report ranges; the app uses the midpoint (floor for "Over $X").
 - **Committee membership is a current snapshot** (`as_of` on each row), not membership at the trade date.
   Trades made before a member joined a committee still show against it.
 - **"Committee-relevant"** is a coarse heuristic: `COMMITTEE_SECTORS` in `db.py` maps committees to
-  sectors, and `ticker_sector` maps tickers to sectors (starter list in `db.py`; add your own rows).
+  sectors, and `ticker_sector` maps tickers to sectors (see Sectors).
   Unmapped tickers are never flagged. Treat flags as a place to look, not a conclusion.
 - Filings lag trades by up to 45 days.
 

@@ -1,111 +1,98 @@
-"""Fill ticker -> sector from SEC data.
+"""Fill ticker -> sector from the FinanceDatabase project (GICS-style sectors for ~30k US-listed tickers).
 
-For each ticker in the trades table that has no sector yet: look up its CIK in the SEC's company ticker
-list, fetch the company's SIC code from data.sec.gov, and map the SIC code to one of the coarse sector
-buckets used by the committee-relevance flag. Mutual funds/ETFs are labelled "Fund / ETF".
+Data comes from the CSVs in github.com/JerBouma/FinanceDatabase (raw.githubusercontent.com), US venues only.
+Each ticker in the trades table that has no sector yet is looked up, and its sector/industry is mapped to the
+coarse buckets used by the committee-relevance flag ("Aerospace & Defense" industry -> "Defense & Aerospace",
+airline/freight/rail industries -> "Transportation", ETFs -> "Fund / ETF").
 
-Precedence: sectors.csv overrides (ticker,sector) > the starter map in db.py > SEC lookup. Existing
-entries are never overwritten, so a lookup only ever fills gaps. Tickers the SEC doesn't know are stored
-as "Unclassified" and retried after 30 days.
+Precedence: sectors.csv overrides (ticker,sector) > the starter map in db.py > this lookup. Existing entries are
+never overwritten, so a run only fills gaps. Tickers not found are stored as "Unclassified" and retried after
+30 days. The files are only downloaded when there is something to look up.
+
+Why not the SEC's SIC codes? They'd be a fine source, but sec.gov answers GitHub-hosted runners with
+"Request Rate Threshold Exceeded" (shared IPs), so that route doesn't work from the nightly workflow.
 
 Usage:  python enrich_sectors.py [--limit N]
-SEC asks for a descriptive User-Agent and at most 10 requests/second; this script sleeps between calls.
-SIC codes are an old, coarse classification (e.g. Alphabet and Visa don't land where GICS puts them),
-so treat sectors as a heuristic.
+Sectors are a heuristic: classification systems disagree at the edges (payments firms, conglomerates, ADRs).
 """
 import argparse
 import csv
+import io
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pandas as pd
 import requests
 
 import db
 
-# SEC fair-access policy: declare who you are, with a contact address. A noreply address is used here.
-UA = {"User-Agent": "stock-tracker personal research berteniris-spec@users.noreply.github.com"}
-TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
-FUNDS_URL = "https://www.sec.gov/files/company_tickers_mf.json"
-SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
-DELAY = 0.15
+FD_BASE = "https://raw.githubusercontent.com/JerBouma/FinanceDatabase/main/database"
+EXCHANGES = ["NMS", "NYQ", "NGM", "NCM", "ASE", "PCX", "BTS", "PNK"]     # US venues, in priority order
 RETRY_MISS_DAYS = 30
+CAP_RANK = {"Mega Cap": 5, "Large Cap": 4, "Mid Cap": 3, "Small Cap": 2, "Micro Cap": 1, "Nano Cap": 0}
 
-# (low, high, sector), first match wins: specific codes before their broad ranges.
-SIC_RULES = [
-    (6324, 6324, "Healthcare"),                               # hospital & medical service plans
-    (3812, 3812, "Defense & Aerospace"), (3720, 3729, "Defense & Aerospace"),
-    (3730, 3732, "Defense & Aerospace"), (3760, 3769, "Defense & Aerospace"),
-    (3480, 3489, "Defense & Aerospace"), (3795, 3795, "Defense & Aerospace"),
-    (2834, 2836, "Healthcare"), (8000, 8099, "Healthcare"), (3840, 3851, "Healthcare"),
-    (5122, 5122, "Healthcare"), (8731, 8734, "Healthcare"), (2830, 2833, "Healthcare"),
-    (2840, 2844, "Consumer Staples"), (5912, 5912, "Consumer Staples"),
-    (4812, 4813, "Communication Services"), (4822, 4841, "Communication Services"),
-    (4899, 4899, "Communication Services"), (4832, 4833, "Communication Services"),
-    (2700, 2799, "Communication Services"), (7310, 7319, "Communication Services"),
-    (7800, 7899, "Communication Services"),
-    (7370, 7379, "Technology"), (3570, 3579, "Technology"), (3660, 3669, "Technology"),
-    (3670, 3679, "Technology"), (3820, 3829, "Technology"), (3860, 3879, "Technology"),
-    (3576, 3577, "Technology"),
-    (6798, 6798, "Real Estate"), (6500, 6599, "Real Estate"),
-    (6000, 6799, "Financials"),
-    (100, 999, "Agriculture"),
-    (1300, 1399, "Energy"), (1200, 1299, "Energy"), (2900, 2999, "Energy"), (4600, 4699, "Energy"),
-    (1000, 1199, "Materials"), (1400, 1499, "Materials"), (2600, 2699, "Materials"),
-    (2800, 2899, "Materials"), (3000, 3099, "Materials"), (3200, 3399, "Materials"),
-    (4950, 4959, "Industrials"), (4900, 4999, "Utilities"),
-    (4000, 4799, "Transportation"),
-    (3711, 3716, "Consumer Discretionary"),
-    (2000, 2199, "Consumer Staples"), (5400, 5499, "Consumer Staples"), (5140, 5149, "Consumer Staples"),
-    (2200, 2599, "Consumer Discretionary"), (3100, 3199, "Consumer Discretionary"),
-    (3750, 3799, "Consumer Discretionary"), (3900, 3999, "Consumer Discretionary"),
-    (5500, 5999, "Consumer Discretionary"), (7000, 7099, "Consumer Discretionary"),
-    (7200, 7299, "Consumer Discretionary"), (7500, 7599, "Consumer Discretionary"),
-    (7900, 7999, "Consumer Discretionary"), (8200, 8299, "Consumer Discretionary"),
-    (1500, 1799, "Industrials"), (3400, 3699, "Industrials"), (3700, 3749, "Industrials"),
-    (3800, 3899, "Industrials"), (5000, 5399, "Industrials"), (7300, 7399, "Industrials"),
-    (8700, 8799, "Industrials"),
-]
+SECTOR_MAP = {
+    "Financials": "Financials", "Health Care": "Healthcare", "Information Technology": "Technology",
+    "Industrials": "Industrials", "Consumer Discretionary": "Consumer Discretionary", "Energy": "Energy",
+    "Materials": "Materials", "Communication Services": "Communication Services",
+    "Consumer Staples": "Consumer Staples", "Real Estate": "Real Estate", "Utilities": "Utilities",
+}
 
 
-def sic_to_sector(sic):
-    if sic is None:
-        return "Other"
-    for lo, hi, sector in SIC_RULES:
-        if lo <= sic <= hi:
-            return sector
-    return "Other"
+def fd_sector(sector, industry_group, industry):
+    """Map a FinanceDatabase classification to this app's sector buckets."""
+    if isinstance(industry, str) and industry.strip() == "Aerospace & Defense":
+        return "Defense & Aerospace"
+    if isinstance(industry_group, str) and industry_group.strip() == "Transport & Logistics":
+        return "Transportation"
+    if isinstance(sector, str) and sector in SECTOR_MAP:
+        return SECTOR_MAP[sector]
+    return None
 
 
-BACKOFF = 15          # seconds; doubles after each throttled attempt
-MAX_CONSECUTIVE_ERRORS = 3
-
-
-def fetch_json(url, tries=3):
-    """GET JSON, backing off when the SEC throttles (403/429/503 with "Request Rate Threshold Exceeded")."""
+def http_get(url, tries=3):
+    """Fetch bytes; None if the file doesn't exist (404). Retries transient server errors."""
     for attempt in range(tries):
-        time.sleep(DELAY)
-        r = requests.get(url, headers=UA, timeout=30)
-        if r.status_code in (403, 429, 503) and attempt < tries - 1:
-            wait = BACKOFF * 2 ** attempt
-            print(f"  HTTP {r.status_code} from {url.split('/')[-1]}; retrying in {wait}s")
-            time.sleep(wait)
+        r = requests.get(url, timeout=120)
+        if r.status_code == 404:
+            return None
+        if r.status_code >= 500 and attempt < tries - 1:
+            time.sleep(5 * 2 ** attempt)
             continue
-        if not r.ok:
-            raise RuntimeError(f"HTTP {r.status_code} for {url}: {r.text[:200]!r}")
-        return r.json()
+        r.raise_for_status()
+        return r.content
 
 
 def _norm(t):
-    return t.upper().replace(".", "-").strip()
+    return str(t).upper().replace(".", "-").strip()
 
 
-def load_sec_maps(fetch=fetch_json):
-    companies = {_norm(v["ticker"]): int(v["cik_str"]) for v in fetch(TICKERS_URL).values()}
-    mf = fetch(FUNDS_URL)
-    sym = mf["fields"].index("symbol")
-    funds = {_norm(row[sym]) for row in mf["data"] if row[sym]}
-    return companies, funds
+def load_classification(fetch=http_get, exchanges=EXCHANGES):
+    """Return ({ticker: (bucket, industry text)}, {etf tickers}) from the US-venue CSVs."""
+    equities, etfs = {}, set()
+    for ex in exchanges:
+        raw = fetch(f"{FD_BASE}/equities/{ex}.csv")
+        if raw is None:
+            print(f"  equities/{ex}.csv not found, skipping")
+            continue
+        df = pd.read_csv(io.BytesIO(raw), low_memory=False,
+                         usecols=lambda c: c in ("symbol", "sector", "industry_group", "industry", "market_cap", "delisted"))
+        df = df[df["symbol"].notna()].copy()
+        df["_live"] = (~df["delisted"].fillna(False).astype(bool)).astype(int) if "delisted" in df else 1
+        df["_cap"] = df["market_cap"].map(CAP_RANK).fillna(-1) if "market_cap" in df else -1
+        df = df.sort_values(["_live", "_cap"], ascending=False).drop_duplicates("symbol")   # best row per symbol
+        for row in df.itertuples():
+            key = _norm(row.symbol)
+            if key not in equities:                  # earlier venues win
+                bucket = fd_sector(row.sector, row.industry_group, row.industry)
+                text = " / ".join(str(x) for x in (row.industry_group, row.industry) if isinstance(x, str))
+                equities[key] = (bucket, text or None)
+    for ex in exchanges:
+        raw = fetch(f"{FD_BASE}/etfs/{ex}.csv")
+        if raw is not None:
+            etfs.update(_norm(s) for s in pd.read_csv(io.BytesIO(raw), usecols=["symbol"], low_memory=False)["symbol"].dropna())
+    return equities, etfs
 
 
 def pending(con, retry_after_days=RETRY_MISS_DAYS):
@@ -113,17 +100,17 @@ def pending(con, retry_after_days=RETRY_MISS_DAYS):
     cutoff = (datetime.now(timezone.utc) - timedelta(days=retry_after_days)).isoformat()
     rows = con.execute("""
         SELECT DISTINCT t.ticker FROM trades t LEFT JOIN ticker_sector ts USING (ticker)
-        WHERE t.ticker <> '' AND (ts.ticker IS NULL OR (ts.source = 'sec-miss' AND ts.updated_at < ?))
+        WHERE t.ticker <> '' AND (ts.ticker IS NULL OR (ts.source = 'fd-miss' AND ts.updated_at < ?))
         ORDER BY t.ticker""", (cutoff,)).fetchall()
     return [r[0] for r in rows]
 
 
-def _save(con, ticker, sector, source, sic=None, desc=None):
+def _save(con, ticker, sector, source, industry=None):
     con.execute(
-        "INSERT INTO ticker_sector(ticker, sector, sic, sic_description, source, updated_at) VALUES (?,?,?,?,?,?) "
-        "ON CONFLICT(ticker) DO UPDATE SET sector=excluded.sector, sic=excluded.sic, "
-        "sic_description=excluded.sic_description, source=excluded.source, updated_at=excluded.updated_at",
-        (ticker, sector, sic, desc, source, datetime.now(timezone.utc).isoformat()))
+        "INSERT INTO ticker_sector(ticker, sector, industry, source, updated_at) VALUES (?,?,?,?,?) "
+        "ON CONFLICT(ticker) DO UPDATE SET sector=excluded.sector, industry=excluded.industry, "
+        "source=excluded.source, updated_at=excluded.updated_at",
+        (ticker, sector, industry, source, datetime.now(timezone.utc).isoformat()))
 
 
 def apply_overrides(con, path=Path(__file__).with_name("sectors.csv")):
@@ -138,43 +125,28 @@ def apply_overrides(con, path=Path(__file__).with_name("sectors.csv")):
     return n
 
 
-def enrich(con, fetch=fetch_json, limit=None):
-    list_fetch = (lambda u: fetch_json(u, tries=6)) if fetch is fetch_json else fetch   # the two list files matter most
-    companies, funds = load_sec_maps(list_fetch)
+def enrich(con, fetch=http_get, limit=None):
     todo = pending(con)
     if limit:
         todo = todo[:limit]
-    tally = {"sec": 0, "sec-fund": 0, "sec-miss": 0, "error": 0}
-    streak = 0
-    for i, ticker in enumerate(todo, 1):
-        key = _norm(ticker)
-        try:
-            if key in companies:
-                sub = fetch(SUBMISSIONS_URL.format(cik=companies[key]))
-                sic = int(sub["sic"]) if str(sub.get("sic") or "").isdigit() else None
-                with con:
-                    _save(con, ticker, sic_to_sector(sic), "sec", sic, sub.get("sicDescription"))
-                tally["sec"] += 1
-            elif key in funds:
-                with con:
-                    _save(con, ticker, "Fund / ETF", "sec-fund")
-                tally["sec-fund"] += 1
-            else:
-                with con:
-                    _save(con, ticker, "Unclassified", "sec-miss")
-                tally["sec-miss"] += 1
-            streak = 0
-        except Exception as e:                       # leave the ticker unset so the next run retries it
-            tally["error"] += 1
-            streak += 1
-            print(f"  {ticker}: {e}")
-            if streak >= MAX_CONSECUTIVE_ERRORS:
-                print("  too many consecutive errors (SEC is likely throttling this IP); stopping, "
-                      "the next run will continue where this one left off")
-                tally["aborted"] = True
-                break
-        if i % 100 == 0:
-            print(f"  {i}/{len(todo)} tickers done")
+    tally = {"classified": 0, "etf": 0, "miss": 0}
+    if not todo:
+        return 0, tally
+    equities, etfs = load_classification(fetch)
+    print(f"  classification loaded: {len(equities):,} equities, {len(etfs):,} ETFs")
+    with con:
+        for ticker in todo:
+            key = _norm(ticker)
+            hit = equities.get(key)
+            if hit and hit[0]:
+                _save(con, ticker, hit[0], "financedatabase", hit[1])
+                tally["classified"] += 1
+            elif key in etfs and not hit:
+                _save(con, ticker, "Fund / ETF", "fd-etf")
+                tally["etf"] += 1
+            else:                                    # unknown, or known without a usable sector
+                _save(con, ticker, "Unclassified", "fd-miss", hit[1] if hit else None)
+                tally["miss"] += 1
     return len(todo), tally
 
 

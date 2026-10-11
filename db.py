@@ -61,12 +61,11 @@ CREATE TABLE IF NOT EXISTS filings (
     updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS ticker_sector (
-    ticker          TEXT PRIMARY KEY,
-    sector          TEXT NOT NULL,
-    sic             INTEGER,
-    sic_description TEXT,
-    source          TEXT DEFAULT 'default',   -- default | override | sec | sec-fund | sec-miss
-    updated_at      TEXT
+    ticker     TEXT PRIMARY KEY,
+    sector     TEXT NOT NULL,
+    industry   TEXT,                          -- free text from the classification source
+    source     TEXT DEFAULT 'default',        -- default | override | financedatabase | fd-etf | fd-miss
+    updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_trades_member ON trades(bioguide_id);
 CREATE INDEX IF NOT EXISTS idx_trades_ticker ON trades(ticker);
@@ -148,8 +147,7 @@ def _migrate(con):
             con.execute(f"ALTER TABLE members ADD COLUMN {col} {typ}")
     if "doc_id" not in cols("trades"):
         con.execute("ALTER TABLE trades ADD COLUMN doc_id TEXT")
-    for col, typ in (("sic", "INTEGER"), ("sic_description", "TEXT"), ("source", "TEXT DEFAULT 'default'"),
-                     ("updated_at", "TEXT")):
+    for col, typ in (("industry", "TEXT"), ("source", "TEXT DEFAULT 'default'"), ("updated_at", "TEXT")):
         if col not in cols("ticker_sector"):
             con.execute(f"ALTER TABLE ticker_sector ADD COLUMN {col} {typ}")
 
