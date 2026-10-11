@@ -32,14 +32,7 @@ if not db.DB_PATH.exists():  # first start on a fresh host: fetch the published 
         st.stop()
 
 
-@st.cache_resource
-def get_con(mtime):
-    # Connection is created per DB-file version so a refreshed congress.db is picked up.
-    con = db.connect()
-    return con
-
-
-con = get_con(db.DB_PATH.stat().st_mtime)
+con = db.connect()  # a fresh connection per run: cheap for SQLite, and never stale after a data refresh
 
 
 def usd(n):
