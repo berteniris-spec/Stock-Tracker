@@ -160,6 +160,28 @@ def insert_trade(con, bioguide_id, tx_date, ticker, tx_type, amount_label, *,
     return cur.rowcount
 
 
+# ---------- volume basis ----------
+# Filings give ranges, some very wide ($5M-$25M). "mid" counts the midpoint (floor for open-ended
+# "Over $X"); "min" counts the filed minimum, a conservative lower bound.
+_BASIS = {"mode": "mid"}
+
+
+def set_basis(mode):
+    assert mode in ("mid", "min")
+    _BASIS["mode"] = mode
+
+
+def _est(alias="t"):
+    """SQL expression for a trade's volume under the current basis."""
+    col = "amount_est" if _BASIS["mode"] == "mid" else "amount_min"
+    return f"{alias}.{col}" if alias else col
+
+
+def volume_of(df):
+    """Sum a trades DataFrame's volume under the current basis."""
+    return df["amount_est" if _BASIS["mode"] == "mid" else "amount_min"].sum()
+
+
 # ---------- queries (return DataFrames) ----------
 
 def _df(con, sql, params=()):
@@ -171,9 +193,9 @@ def has_sample_data(con):
 
 
 def members_with_trades(con):
-    return _df(con, """
+    return _df(con, f"""
         SELECT m.bioguide_id, m.name, m.chamber, m.state, m.party, m.source,
-               COUNT(t.id) AS trades, COALESCE(SUM(t.amount_est), 0) AS est_volume
+               COUNT(t.id) AS trades, COALESCE(SUM({_est()}), 0) AS est_volume
         FROM members m JOIN trades t USING (bioguide_id)
         GROUP BY m.bioguide_id ORDER BY est_volume DESC""")
 
@@ -208,9 +230,9 @@ def member_trades(con, bioguide_id):
 
 
 def committee_members(con, committee_id):
-    return _df(con, """
+    return _df(con, f"""
         SELECT m.bioguide_id, m.name, m.chamber, m.party, ms.title,
-               COUNT(t.id) AS trades, COALESCE(SUM(t.amount_est), 0) AS est_volume
+               COUNT(t.id) AS trades, COALESCE(SUM({_est()}), 0) AS est_volume
         FROM memberships ms JOIN members m USING (bioguide_id)
         LEFT JOIN trades t USING (bioguide_id)
         WHERE ms.committee_id = ?
@@ -220,7 +242,7 @@ def committee_members(con, committee_id):
 def committee_trades(con, committee_id):
     df = _df(con, """
         SELECT m.name AS member, t.tx_date, t.ticker, t.asset, t.tx_type,
-               t.amount_label, t.amount_est, ts.sector
+               t.amount_label, t.amount_min, t.amount_max, t.amount_est, ts.sector
         FROM memberships ms JOIN members m USING (bioguide_id)
         JOIN trades t USING (bioguide_id)
         LEFT JOIN ticker_sector ts USING (ticker)
@@ -231,10 +253,10 @@ def committee_trades(con, committee_id):
 
 
 def committees_with_trading(con):
-    return _df(con, """
+    return _df(con, f"""
         SELECT c.id, c.name, c.chamber,
                COUNT(DISTINCT ms.bioguide_id) AS members,
-               COUNT(t.id) AS trades, COALESCE(SUM(t.amount_est), 0) AS est_volume
+               COUNT(t.id) AS trades, COALESCE(SUM({_est()}), 0) AS est_volume
         FROM committees c JOIN memberships ms ON ms.committee_id = c.id
         JOIN trades t ON t.bioguide_id = ms.bioguide_id
         WHERE c.parent_id IS NULL
@@ -243,25 +265,25 @@ def committees_with_trading(con):
 
 def ticker_summary(con, ticker):
     return _df(con, """
-        SELECT m.name AS member, m.chamber, t.tx_date, t.tx_type, t.amount_label, t.amount_est
+        SELECT m.name AS member, m.chamber, t.tx_date, t.tx_type, t.amount_label, t.amount_min, t.amount_max, t.amount_est
         FROM trades t JOIN members m USING (bioguide_id)
         WHERE t.ticker = ? ORDER BY t.tx_date DESC""", (ticker,))
 
 
 def top_tickers(con, limit=15):
-    return _df(con, """
+    return _df(con, f"""
         SELECT t.ticker, COALESCE(ts.sector, 'Unmapped') AS sector,
                COUNT(*) AS trades, COUNT(DISTINCT t.bioguide_id) AS members,
-               COALESCE(SUM(t.amount_est), 0) AS est_volume
+               COALESCE(SUM({_est()}), 0) AS est_volume
         FROM trades t LEFT JOIN ticker_sector ts USING (ticker)
         WHERE t.ticker IS NOT NULL AND t.ticker <> ''
         GROUP BY t.ticker ORDER BY est_volume DESC LIMIT ?""", (limit,))
 
 
 def monthly_volume(con):
-    return _df(con, """
+    return _df(con, f"""
         SELECT substr(tx_date, 1, 7) AS month, tx_type,
-               COALESCE(SUM(amount_est), 0) AS est_volume
+               COALESCE(SUM({_est(None)}), 0) AS est_volume
         FROM trades WHERE tx_date IS NOT NULL AND tx_date <= COALESCE(disclosure_date, tx_date)
         GROUP BY month, tx_type ORDER BY month""")
 

@@ -132,6 +132,21 @@ def test_real_world_amount_variants():
     assert db.parse_amount("Over $1,000,000") == (1000000, None, 1000000)
 
 
+def test_volume_basis():
+    with tempfile.TemporaryDirectory() as d:
+        con = db.connect(Path(d) / "t.db")
+        db.init_db(con)
+        con.execute("INSERT INTO members(bioguide_id,name,chamber,state,party,source) VALUES ('X1','X','House','CA','D','congress-legislators')")
+        for lbl in ("$5,000,001 - $25,000,000", "$1,001 - $15,000", "Over $1,000,000"):
+            db.insert_trade(con, "X1", "2026-01-01", "AAA", "Purchase", lbl, asset=lbl)
+        db.set_basis("mid")
+        assert db.members_with_trades(con).est_volume[0] == 15000000 + 8000 + 1000000
+        db.set_basis("min")
+        assert db.members_with_trades(con).est_volume[0] == 5000001 + 1001 + 1000000
+        assert db.volume_of(db.ticker_summary(con, "AAA")) == 5000001 + 1001 + 1000000
+        db.set_basis("mid")
+
+
 def test_unparsed_markers():
     txt = "Foo Corp (FOO) [ST] P 01/01/2026 01/02/2026 $1,001 - $15,000\nF S: New\nMystery row [ST] with no head line"
     rows, markers = hi.parse_ptr_text(txt)

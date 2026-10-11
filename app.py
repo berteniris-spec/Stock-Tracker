@@ -48,11 +48,16 @@ st.title("Congress trades")
 if db.has_sample_data(con):
     st.warning("Sample data is loaded: the members marked *(fictional)* and their trades are invented demo rows. "
                "Run `python load_sample.py --purge` to remove them.")
-st.caption("Volume is estimated from disclosure ranges (midpoint; floor for open-ended ranges). "
+st.caption("Volume is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in the sidebar). "
            "Filings can lag trades by up to 45 days. Committee data is a current snapshot, "
            "not membership as of each trade date.")
 
 page = st.sidebar.radio("View", ["Overview", "Member", "Committee", "Ticker"])
+basis = st.sidebar.radio(
+    "Volume basis", ["Midpoint estimate", "Filed minimum"],
+    help="Filings give ranges, some very wide ($5M-$25M). The midpoint can overstate a trade; "
+         "the filed minimum is a conservative lower bound.")
+db.set_basis("min" if basis == "Filed minimum" else "mid")
 if st.sidebar.button("Refresh data from GitHub"):
     try:
         download_db()
@@ -88,7 +93,7 @@ elif page == "Member":
     tr = db.member_trades(con, bid)
     a, b, c = st.columns(3)
     a.metric("Trades", len(tr))
-    b.metric("Est. volume", usd(tr["amount_est"].sum()))
+    b.metric("Est. volume", usd(db.volume_of(tr)))
     c.metric("Committee-relevant trades", int(tr["committee_relevant"].sum()))
     st.subheader("Committees")
     st.dataframe(mc[["name", "title", "as_of"]], hide_index=True, use_container_width=True)
@@ -108,7 +113,7 @@ elif page == "Committee":
     tr = db.committee_trades(con, cid)
     a, b, c = st.columns(3)
     a.metric("Members with trades", int((cm["trades"] > 0).sum()))
-    b.metric("Est. volume", usd(tr["amount_est"].sum()))
+    b.metric("Est. volume", usd(db.volume_of(tr)))
     c.metric("Committee-relevant trades", int(tr["committee_relevant"].sum()))
     st.subheader("Members")
     st.dataframe(cm[["name", "chamber", "party", "title", "trades", "est_volume"]], hide_index=True,
@@ -125,5 +130,5 @@ else:
     df = db.ticker_summary(con, t)
     a, b = st.columns(2)
     a.metric("Trades", len(df))
-    b.metric("Est. volume", usd(df["amount_est"].sum()))
+    b.metric("Est. volume", usd(db.volume_of(df)))
     st.dataframe(df, hide_index=True, column_config=MONEY, use_container_width=True)
