@@ -283,7 +283,7 @@ def main():
         sys.exit("No House members in the database. Run ingest_committees.py first.")
 
     index = load_index(args.year, args.refresh_index)
-    done = {r[0] for r in con.execute("SELECT doc_id FROM filings WHERE status IN ('ok','no_text','unmatched_member')")}
+    done = {r[0] for r in con.execute("SELECT doc_id FROM filings WHERE status IN ('ok','no_text')")}
     todo = [r for r in index if r["doc_id"] not in done]
     print(f"{args.year}: {len(index)} PTRs in index, {len(todo)} to process")
     if args.limit:
