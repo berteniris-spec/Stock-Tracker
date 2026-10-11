@@ -39,10 +39,30 @@ def usd(n):
     return f"${int(n):,}" if n == n and n is not None else "n/a"
 
 
-MONEY = {"est_volume": st.column_config.NumberColumn("Est. volume", format="$%d"),
-         "amount_est": st.column_config.NumberColumn("Est. amount", format="$%d"),
-         "amount_min": st.column_config.NumberColumn("Min", format="$%d"),
-         "amount_max": st.column_config.NumberColumn("Max", format="$%d")}
+LABELS = {"est_volume": st.column_config.NumberColumn("Volume"),
+          "amount_est": st.column_config.NumberColumn("Est. amount"),
+          "amount_min": st.column_config.NumberColumn("Min"),
+          "amount_max": st.column_config.NumberColumn("Max")}
+MONEY_COLS = ("est_volume", "amount_est", "amount_min", "amount_max")
+
+
+def show(df):
+    """Table with $ and thousands separators; the underlying numbers stay numeric so sorting works."""
+    df = df.copy()
+    if "title" in df:
+        df["title"] = df["title"].fillna("")
+    fmt = {c: "${:,.0f}" for c in MONEY_COLS if c in df.columns}
+    st.dataframe(df.style.format(fmt, na_rep="") if fmt else df,
+                 hide_index=True, column_config=LABELS, use_container_width=True)
+
+
+def relevant_metric(col, df, sectors_known):
+    if sectors_known:
+        col.metric("Committee-relevant trades", int(df["committee_relevant"].sum()))
+    else:
+        col.metric("Committee-relevant trades", "n/a", help="No sector mapping for this committee: its "
+                   "jurisdiction is broad or procedural, so the heuristic doesn't apply.")
+
 
 st.title("Congress trades")
 if db.has_sample_data(con):
@@ -58,6 +78,7 @@ basis = st.sidebar.radio(
     help="Filings give ranges, some very wide ($5M-$25M). The midpoint can overstate a trade; "
          "the filed minimum is a conservative lower bound.")
 db.set_basis("min" if basis == "Filed minimum" else "mid")
+vol_label = "Volume (filed minimum)" if basis == "Filed minimum" else "Est. volume (midpoint)"
 if st.sidebar.button("Refresh data from GitHub"):
     try:
         download_db()
@@ -69,18 +90,16 @@ if page == "Overview":
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("Most active members")
-        st.dataframe(db.members_with_trades(con)[["name", "chamber", "party", "trades", "est_volume"]].head(25),
-                     hide_index=True, column_config=MONEY, use_container_width=True)
+        show(db.members_with_trades(con)[["name", "chamber", "party", "trades", "est_volume"]].head(25))
     with c2:
         st.subheader("Committees by trading volume")
-        st.dataframe(db.committees_with_trading(con)[["name", "members", "trades", "est_volume"]].head(25),
-                     hide_index=True, column_config=MONEY, use_container_width=True)
+        show(db.committees_with_trading(con)[["name", "members", "trades", "est_volume"]].head(25))
     st.subheader("Monthly estimated volume")
     mv = db.monthly_volume(con)
     if not mv.empty:
         st.bar_chart(mv.pivot(index="month", columns="tx_type", values="est_volume").fillna(0))
     st.subheader("Top tickers")
-    st.dataframe(db.top_tickers(con, 20), hide_index=True, column_config=MONEY, use_container_width=True)
+    show(db.top_tickers(con, 20))
 
 elif page == "Member":
     members = db.members_with_trades(con)
@@ -93,14 +112,13 @@ elif page == "Member":
     tr = db.member_trades(con, bid)
     a, b, c = st.columns(3)
     a.metric("Trades", len(tr))
-    b.metric("Est. volume", usd(db.volume_of(tr)))
-    c.metric("Committee-relevant trades", int(tr["committee_relevant"].sum()))
+    b.metric(vol_label, usd(db.volume_of(tr)))
+    relevant_metric(c, tr, bool(db.member_sectors(con, bid)))
     st.subheader("Committees")
-    st.dataframe(mc[["name", "title", "as_of"]], hide_index=True, use_container_width=True)
+    show(mc[["name", "title", "as_of"]])
     st.subheader("Trades")
     only_rel = st.checkbox("Only committee-relevant (sector heuristic)")
-    st.dataframe(tr[tr["committee_relevant"]] if only_rel else tr, hide_index=True,
-                 column_config=MONEY, use_container_width=True)
+    show(tr[tr["committee_relevant"]] if only_rel else tr)
 
 elif page == "Committee":
     ct = db.committees_with_trading(con)
@@ -113,13 +131,15 @@ elif page == "Committee":
     tr = db.committee_trades(con, cid)
     a, b, c = st.columns(3)
     a.metric("Members with trades", int((cm["trades"] > 0).sum()))
-    b.metric("Est. volume", usd(db.volume_of(tr)))
-    c.metric("Committee-relevant trades", int(tr["committee_relevant"].sum()))
+    b.metric(vol_label, usd(db.volume_of(tr)))
+    relevant_metric(c, tr, bool(db.committee_sectors(cid)))
     st.subheader("Members")
-    st.dataframe(cm[["name", "chamber", "party", "title", "trades", "est_volume"]], hide_index=True,
-                 column_config=MONEY, use_container_width=True)
+    only_traders = st.checkbox("Only members with trades", value=True)
+    if only_traders:
+        cm = cm[cm["trades"] > 0]
+    show(cm[["name", "chamber", "party", "title", "trades", "est_volume"]])
     st.subheader("Trades by members of this committee")
-    st.dataframe(tr, hide_index=True, column_config=MONEY, use_container_width=True)
+    show(tr)
 
 else:
     tickers = db.all_tickers(con)
@@ -130,5 +150,5 @@ else:
     df = db.ticker_summary(con, t)
     a, b = st.columns(2)
     a.metric("Trades", len(df))
-    b.metric("Est. volume", usd(db.volume_of(df)))
-    st.dataframe(df, hide_index=True, column_config=MONEY, use_container_width=True)
+    b.metric(vol_label, usd(db.volume_of(df)))
+    show(df)

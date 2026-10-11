@@ -85,6 +85,14 @@ COMMITTEE_SECTORS = {
     "SSFI": ["Financials", "Healthcare"], "HSWM": ["Financials", "Healthcare"],
     "HSHM": ["Technology", "Defense & Aerospace"],
     "HSZS": ["Technology", "Defense & Aerospace"],
+    "HSJU": ["Technology", "Communication Services"], "SSJU": ["Technology", "Communication Services"],  # antitrust
+    "HSVR": ["Healthcare"], "SSVA": ["Healthcare"],
+    "HLIG": ["Defense & Aerospace", "Technology"], "SLIN": ["Defense & Aerospace", "Technology"],
+    "HSFA": ["Defense & Aerospace"], "SSFR": ["Defense & Aerospace"],
+    "SSGA": ["Technology", "Defense & Aerospace"],
+    "JSEC": ["Financials"],
+    # Deliberately unmapped (jurisdiction spans everything or is procedural): Appropriations, Budget, Rules,
+    # Ethics, House Administration, Oversight, Education, Small Business, Indian Affairs.
 }
 
 # 2026-era starter map for common tickers. Add your own in sectors.csv (ticker,sector).
@@ -206,6 +214,15 @@ def member_committees(con, bioguide_id):
                (c.parent_id IS NOT NULL) AS is_sub
         FROM memberships ms JOIN committees c ON c.id = ms.committee_id
         WHERE ms.bioguide_id = ? ORDER BY is_sub, c.name""", (bioguide_id,))
+
+
+def committee_sectors(committee_id):
+    """Sectors a committee is mapped to (empty = no mapping, so the relevance flag doesn't apply)."""
+    return COMMITTEE_SECTORS.get(committee_id[:4], [])
+
+
+def member_sectors(con, bioguide_id):
+    return _member_sectors(con, bioguide_id)
 
 
 def _member_sectors(con, bioguide_id):
