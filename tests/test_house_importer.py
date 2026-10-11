@@ -107,6 +107,31 @@ def test_inline_variants():
     assert rows[2]["amount"] == "$15,001 - $50,000"
 
 
+def test_real_world_amount_variants():
+    txt = "\n".join([
+        "SP U.S. Treasury Note due 2/28/2029 P 12/15/2025 12/16/2025 Spouse/DC Over",
+        "[GS] $1,000,000",
+        "F S: New",
+        "  Capital Partners I LP (GLAS P 03/03/2026 03/30/2026 $707.21",
+        "Funds LP) [HN]",
+        "F S: New",
+        "SP Premier Access Fund [OT] P 03/25/2026 03/31/2026 $50,001 -",
+        "$100,000",
+        "F S: New",
+        " JT Tempus AI Class A Common P 01/16/2026 01/20/2026 $50,001 -",
+        "Stock (TEM) [ST] $100,000",
+        "F S: New",
+    ])
+    rows, markers = hi.parse_ptr_text(txt)
+    assert markers == 4 and len(rows) == 4, (markers, len(rows), rows)
+    assert [r["amount"] for r in rows] == ["Over $1,000,000", "$707.21", "$50,001 - $100,000", "$50,001 - $100,000"]
+    assert [r["ticker"] for r in rows] == ["", "", "", "TEM"]
+    assert rows[0]["owner"] == "Spouse" and rows[2]["asset"] == "Premier Access Fund" and rows[3]["owner"] == "Joint"
+    assert hi.unparsed_markers(txt) == []                       # positions line up, even with leading spaces
+    assert db.parse_amount("$707.21") == (707, 707, 707)
+    assert db.parse_amount("Over $1,000,000") == (1000000, None, 1000000)
+
+
 def test_unparsed_markers():
     txt = "Foo Corp (FOO) [ST] P 01/01/2026 01/02/2026 $1,001 - $15,000\nF S: New\nMystery row [ST] with no head line"
     rows, markers = hi.parse_ptr_text(txt)

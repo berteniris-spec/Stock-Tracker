@@ -44,7 +44,8 @@ _DATE = r"\d{1,2}/\d{1,2}/\d{4}"
 HEAD = re.compile(
     r"(?<!\S)(?P<ttype>S\s*\(partial\)|P|S|E)\s+"
     rf"(?P<tx>{_DATE})\s+(?P<notif>{_DATE})\s+"
-    r"(?P<amount>\$[\d,]+\s*-\s*\$[\d,]+|\$[\d,]+\s*-(?!\s*\$)|Over\s+\$[\d,]+)")
+    r"(?P<amount>\$[\d,]+\s*-\s*\$[\d,]+|\$[\d,]+\s*-(?!\s*\$)"
+    r"|(?:Spouse/DC\s+)?Over(?:\s+\$[\d,]+)?|\$[\d,]+(?:\.\d+)?(?!\s*[-\d,.]))")
 MARKER = re.compile(r"\[(?P<atype>[A-Z]{2})\]")
 TICKER_AT_END = re.compile(r"\(([A-Z][A-Z0-9.\-]{0,6})\)\s*$")
 OWNER_START = re.compile(r"(SP|DC|JT) ")
@@ -72,9 +73,13 @@ def unparsed_markers(text, context=(250, 150)):
             for m in MARKER.finditer(clean) if m.start() not in used]
 
 
+def _incomplete(amount):
+    return amount.endswith("-") or amount.endswith("Over")
+
+
 def _complete_amount(amount, *chunks):
-    """Finish an amount that wrapped across lines ("$15,001 -" ... "$50,000")."""
-    if not amount.endswith("-"):
+    """Finish an amount that wrapped across lines ("$15,001 -" ... "$50,000", "Over" ... "$1,000,000")."""
+    if not _incomplete(amount):
         return amount
     for chunk in chunks:
         m = re.match(r"\s*(\$[\d,]+)", chunk) or re.search(r"\$[\d,]+", chunk)
@@ -96,11 +101,13 @@ def parse_ptr_text(text):
     starts = [text.rfind("\n", 0, h.start()) + 1 for h in heads] + [len(text)]
     rows = []
     for i, h in enumerate(heads):
-        pre = text[starts[i]:h.start()].strip()
+        pre_raw = text[starts[i]:h.start()]
+        lead = len(pre_raw) - len(pre_raw.lstrip())
+        pre = pre_raw.strip()
         tail = text[h.end():starts[i + 1]]
-        amount = re.sub(r"\s+", " ", h.group("amount"))
+        amount = re.sub(r"\s+", " ", h.group("amount")).replace("Spouse/DC ", "")
         pm = MARKER.search(pre)
-        pos = starts[i] + pm.start() if pm else None
+        pos = starts[i] + lead + pm.start() if pm else None
         if pm:                                           # inline layout
             atype, name_part, rest = pm.group("atype"), pre[:pm.start()].strip(), tail[:60]
             amount = _complete_amount(amount, rest)
@@ -111,7 +118,7 @@ def parse_ptr_text(text):
                 continue
             atype, name_part, cont = mk.group("atype"), pre, tail[:mk.start()]
             pos = h.end() + mk.start()
-            m2 = re.search(r"\$[\d,]+", cont) if amount.endswith("-") else None
+            m2 = re.search(r"\$[\d,]+", cont) if _incomplete(amount) else None
             if m2:                                       # wrapped amount's tail sits before the marker
                 cont = cont[:m2.start()] + cont[m2.end():]
                 amount = f"{amount} {m2.group(0)}"

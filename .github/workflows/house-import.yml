@@ -98,7 +98,7 @@ jobs:
                   continue
               lines = open(path, errors="replace").read().splitlines()
               lines = lines[:90] if path.startswith("debug_") else lines[-70:]
-              body = "\n".join(l[:200] for l in lines)[:9000]
+              body = "\n".join(l[:700] for l in lines)[:9000]
               body = body.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
               print(f"::notice title={path}::{body}")
           PY

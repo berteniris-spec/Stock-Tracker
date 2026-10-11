@@ -109,11 +109,13 @@ def parse_amount(label):
     """'$1,001 - $15,000' -> (1001, 15000, 8000); 'Over $50,000,000' -> (50000000, None, 50000000)."""
     if not label:
         return None, None, None
-    nums = [int(n.replace(",", "")) for n in _NUM.findall(str(label))]
+    nums = [int(n.replace(",", "")) for n in _NUM.findall(re.sub(r"(?<=\d)\.\d+", "", str(label)))]
     if not nums:
         return None, None, None
-    if "over" in str(label).lower() or len(nums) == 1:
+    if "over" in str(label).lower():
         return nums[0], None, nums[0]
+    if len(nums) == 1:                       # an exact amount, e.g. "$707.21"
+        return nums[0], nums[0], nums[0]
     lo, hi = nums[0], nums[1]
     return lo, hi, (lo + hi) // 2
 
