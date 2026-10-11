@@ -44,17 +44,13 @@ def main():
                     unknown += 1
                     unknown_ids.add(bid)
                     continue
-                lo, hi, est = db.parse_amount(row["amount"])
-                cur = con.execute(
-                    "INSERT OR IGNORE INTO trades(bioguide_id, tx_date, disclosure_date, ticker, asset, "
-                    "tx_type, owner, amount_label, amount_min, amount_max, amount_est, source) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (bid, row["tx_date"].strip(), (row.get("disclosure_date") or "").strip() or None,
-                     row["ticker"].strip().upper(), (row.get("asset") or "").strip(),
-                     row["tx_type"].strip(), (row.get("owner") or "Self").strip(),
-                     row["amount"].strip(), lo, hi, est, args.source))
-                added += cur.rowcount
-                dupes += 1 - cur.rowcount
+                n = db.insert_trade(
+                    con, bid, row["tx_date"].strip(), row["ticker"].strip(), row["tx_type"].strip(),
+                    row["amount"].strip(), disclosure_date=(row.get("disclosure_date") or "").strip() or None,
+                    asset=(row.get("asset") or "").strip(), owner=(row.get("owner") or "Self").strip(),
+                    source=args.source)
+                added += n
+                dupes += 1 - n
     print(f"added={added} duplicates={dupes} skipped_unknown_member={unknown}")
     if unknown_ids:
         print("unknown ids:", ", ".join(sorted(unknown_ids)[:10]))

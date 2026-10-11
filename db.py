@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS members (
     chamber     TEXT,            -- 'Senate' or 'House'
     state       TEXT,
     party       TEXT,
+    last_name   TEXT,
+    first_name  TEXT,
+    district    INTEGER,         -- House district (0 = at-large); NULL for senators
     source      TEXT NOT NULL DEFAULT 'congress-legislators'  -- 'sample' for fictional demo rows
 );
 CREATE TABLE IF NOT EXISTS committees (
@@ -44,7 +47,18 @@ CREATE TABLE IF NOT EXISTS trades (
     amount_max      INTEGER,     -- NULL for open-ended ranges ("Over $X")
     amount_est      INTEGER,     -- midpoint, or the floor for open-ended ranges
     source          TEXT NOT NULL DEFAULT 'import',
-    UNIQUE (bioguide_id, tx_date, ticker, tx_type, amount_label, owner)
+    doc_id          TEXT,        -- source filing id (House Clerk DocID), when known
+    UNIQUE (bioguide_id, tx_date, ticker, asset, tx_type, amount_label, owner)
+);
+CREATE TABLE IF NOT EXISTS filings (
+    doc_id      TEXT PRIMARY KEY,
+    year        INTEGER,
+    bioguide_id TEXT,
+    filer       TEXT,
+    status      TEXT NOT NULL,   -- ok | partial | no_text | unmatched_member | fetch_failed
+    rows_parsed INTEGER,
+    markers     INTEGER,         -- "[XX]" asset-type markers found; should equal rows_parsed
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS ticker_sector (
     ticker TEXT PRIMARY KEY,
@@ -111,13 +125,37 @@ def connect(path=DB_PATH):
     return con
 
 
+def _migrate(con):
+    """Add columns introduced after a database was first created."""
+    def cols(t):
+        return {r[1] for r in con.execute(f"PRAGMA table_info({t})")}
+    for col, typ in (("last_name", "TEXT"), ("first_name", "TEXT"), ("district", "INTEGER")):
+        if col not in cols("members"):
+            con.execute(f"ALTER TABLE members ADD COLUMN {col} {typ}")
+    if "doc_id" not in cols("trades"):
+        con.execute("ALTER TABLE trades ADD COLUMN doc_id TEXT")
+
+
 def init_db(con):
     con.executescript(SCHEMA)
+    _migrate(con)
     con.executemany(
         "INSERT OR IGNORE INTO ticker_sector(ticker, sector) VALUES (?, ?)",
         DEFAULT_SECTORS.items(),
     )
     con.commit()
+
+
+def insert_trade(con, bioguide_id, tx_date, ticker, tx_type, amount_label, *,
+                 disclosure_date=None, asset="", owner="Self", source="import", doc_id=None):
+    """Insert one trade, estimating volume from the range. Returns 1 if added, 0 if a duplicate."""
+    lo, hi, est = parse_amount(amount_label)
+    cur = con.execute(
+        "INSERT OR IGNORE INTO trades(bioguide_id, tx_date, disclosure_date, ticker, asset, tx_type, owner, "
+        "amount_label, amount_min, amount_max, amount_est, source, doc_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (bioguide_id, tx_date, disclosure_date, (ticker or "").upper(), asset or "", tx_type, owner or "Self",
+         amount_label, lo, hi, est, source, doc_id))
+    return cur.rowcount
 
 
 # ---------- queries (return DataFrames) ----------

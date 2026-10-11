@@ -30,6 +30,21 @@ Get the CSV from whichever source you choose (an API such as Quiver, or your own
 House Clerk / Senate eFD filings) and map each member to their Bioguide ID. Names in the
 `members` table come from congress-legislators, so you can match on name to find IDs.
 
+## Import House trades (official data)
+
+```bash
+python house_importer.py --year 2026 --limit 25      # try a small batch first
+python house_importer.py --debug <DocID> --year 2026   # inspect one filing's extracted text and parsed rows
+```
+
+Reads the House Clerk's yearly index, downloads each Periodic Transaction Report PDF, and parses the
+trade table. Each filing is tracked in the `filings` table: `ok`, `partial` (parsed rows != "[XX]" markers
+found, so the layout needs a look), `no_text` (scanned paper filing, no OCR), `unmatched_member`
+(filer isn't a current member) or `fetch_failed`. House only; the Senate has no bulk download.
+Run it from the **House import** GitHub Action if your own network blocks the Clerk's site.
+
+Run the offline tests with `python tests/test_house_importer.py`.
+
 ## Notes and limits
 
 - **Volume is an estimate.** Filings report ranges; the app uses the midpoint (floor for "Over $X").

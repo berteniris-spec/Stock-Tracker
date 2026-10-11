@@ -49,12 +49,15 @@ def main():
             term = p["terms"][-1]
             name = p["name"].get("official_full") or f"{p['name']['first']} {p['name']['last']}"
             con.execute(
-                "INSERT INTO members(bioguide_id, name, chamber, state, party, source) "
-                "VALUES (?,?,?,?,?,'congress-legislators') "
+                "INSERT INTO members(bioguide_id, name, chamber, state, party, last_name, first_name, district, source) "
+                "VALUES (?,?,?,?,?,?,?,?,'congress-legislators') "
                 "ON CONFLICT(bioguide_id) DO UPDATE SET name=excluded.name, chamber=excluded.chamber, "
-                "state=excluded.state, party=excluded.party",
+                "state=excluded.state, party=excluded.party, last_name=excluded.last_name, "
+                "first_name=excluded.first_name, district=excluded.district",
                 (p["id"]["bioguide"], name,
-                 "Senate" if term["type"] == "sen" else "House", term["state"], term["party"]))
+                 "Senate" if term["type"] == "sen" else "House", term["state"], term["party"],
+                 p["name"].get("last"), p["name"].get("first"),
+                 term.get("district") if term["type"] == "rep" else None))
 
         known_members = {r[0] for r in con.execute("SELECT bioguide_id FROM members")}
         for c in committees:

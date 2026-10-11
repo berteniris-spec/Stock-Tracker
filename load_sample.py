@@ -39,7 +39,8 @@ def main():
         sys.exit("Run ingest_committees.py first so the committees exist.")
     with con:
         for bid, name, chamber, state, party, cids in FICTIONAL:
-            con.execute("INSERT OR REPLACE INTO members VALUES (?,?,?,?,?,'sample')",
+            con.execute("INSERT OR REPLACE INTO members(bioguide_id, name, chamber, state, party, source) "
+                        "VALUES (?,?,?,?,?,'sample')",
                         (bid, name, chamber, state, party))
             for cid in cids:
                 if cid in committees:

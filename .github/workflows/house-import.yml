@@ -1,0 +1,43 @@
+name: House import
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: Filing year
+        default: "2026"
+      limit:
+        description: Max new filings to process (blank = all)
+        default: "25"
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python tests/test_house_importer.py
+      - run: python ingest_committees.py
+      - name: Import House PTRs
+        run: python house_importer.py --year "${{ inputs.year }}" ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
+      - name: Summary
+        run: |
+          python - <<'PY'
+          import db
+          c = db.connect()
+          print("filings by status:", c.execute("select status, count(*) from filings group by status").fetchall() and
+                [tuple(r) for r in c.execute("select status, count(*) from filings group by status")])
+          print("partial/no_text examples:")
+          for r in c.execute("select doc_id, filer, status, rows_parsed, markers from filings where status in ('partial','no_text') limit 10"):
+              print("  ", tuple(r))
+          print("sample trades:")
+          for r in c.execute("select m.name, t.tx_date, t.ticker, t.asset, t.tx_type, t.owner, t.amount_label from trades t join members m using(bioguide_id) order by t.id limit 12"):
+              print("  ", tuple(r))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: congress-db
+          path: congress.db
