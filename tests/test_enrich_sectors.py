@@ -91,6 +91,24 @@ def test_miss_retry_and_errors():
         assert tally["error"] == 1 and con.execute("select 1 from ticker_sector where ticker='LMTX'").fetchone() is None
 
 
+def test_circuit_breaker():
+    with tempfile.TemporaryDirectory() as d:
+        con = _con(d)
+
+        def blocked(url):
+            if url in (es.TICKERS_URL, es.FUNDS_URL):
+                return fake_fetch(url)
+            raise RuntimeError("HTTP 403 Request Rate Threshold Exceeded")
+        # add more SEC-resolvable tickers so the streak can trip
+        for tk in ("A1", "A2", "A3", "A4", "A5"):
+            TICKERS[tk] = {"cik_str": 1, "ticker": tk, "title": tk}
+            db.insert_trade(con, "X1", "2026-01-02", tk, "Purchase", "$1,001 - $15,000", asset=tk)
+        n, tally = es.enrich(con, blocked)
+        assert tally.get("aborted") is True and tally["error"] == es.MAX_CONSECUTIVE_ERRORS, tally
+        for tk in ("A1", "A2", "A3", "A4", "A5"):
+            del TICKERS[tk]
+
+
 def test_overrides():
     with tempfile.TemporaryDirectory() as d:
         con = _con(d)

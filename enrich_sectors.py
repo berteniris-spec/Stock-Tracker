@@ -77,12 +77,23 @@ def sic_to_sector(sic):
     return "Other"
 
 
-def fetch_json(url):
-    time.sleep(DELAY)
-    r = requests.get(url, headers=UA, timeout=30)
-    if not r.ok:
-        raise RuntimeError(f"HTTP {r.status_code} for {url}: {r.text[:300]!r}")
-    return r.json()
+BACKOFF = 15          # seconds; doubles after each throttled attempt
+MAX_CONSECUTIVE_ERRORS = 3
+
+
+def fetch_json(url, tries=3):
+    """GET JSON, backing off when the SEC throttles (403/429/503 with "Request Rate Threshold Exceeded")."""
+    for attempt in range(tries):
+        time.sleep(DELAY)
+        r = requests.get(url, headers=UA, timeout=30)
+        if r.status_code in (403, 429, 503) and attempt < tries - 1:
+            wait = BACKOFF * 2 ** attempt
+            print(f"  HTTP {r.status_code} from {url.split('/')[-1]}; retrying in {wait}s")
+            time.sleep(wait)
+            continue
+        if not r.ok:
+            raise RuntimeError(f"HTTP {r.status_code} for {url}: {r.text[:200]!r}")
+        return r.json()
 
 
 def _norm(t):
@@ -128,11 +139,13 @@ def apply_overrides(con, path=Path(__file__).with_name("sectors.csv")):
 
 
 def enrich(con, fetch=fetch_json, limit=None):
-    companies, funds = load_sec_maps(fetch)
+    list_fetch = (lambda u: fetch_json(u, tries=6)) if fetch is fetch_json else fetch   # the two list files matter most
+    companies, funds = load_sec_maps(list_fetch)
     todo = pending(con)
     if limit:
         todo = todo[:limit]
     tally = {"sec": 0, "sec-fund": 0, "sec-miss": 0, "error": 0}
+    streak = 0
     for i, ticker in enumerate(todo, 1):
         key = _norm(ticker)
         try:
@@ -150,9 +163,16 @@ def enrich(con, fetch=fetch_json, limit=None):
                 with con:
                     _save(con, ticker, "Unclassified", "sec-miss")
                 tally["sec-miss"] += 1
+            streak = 0
         except Exception as e:                       # leave the ticker unset so the next run retries it
             tally["error"] += 1
+            streak += 1
             print(f"  {ticker}: {e}")
+            if streak >= MAX_CONSECUTIVE_ERRORS:
+                print("  too many consecutive errors (SEC is likely throttling this IP); stopping, "
+                      "the next run will continue where this one left off")
+                tally["aborted"] = True
+                break
         if i % 100 == 0:
             print(f"  {i}/{len(todo)} tickers done")
     return len(todo), tally
