@@ -60,8 +60,10 @@ jobs:
         run: |
           {
             python tests/test_house_importer.py
+            python tests/test_enrich_sectors.py
             python ingest_committees.py
             python house_importer.py --year "${YEAR_IN:-$(date +%Y)}" ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
+            python enrich_sectors.py || echo "sector enrichment failed (continuing without it)"
             python - <<'PY'
           import db
           c = db.connect()

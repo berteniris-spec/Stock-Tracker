@@ -72,6 +72,11 @@ st.caption("Volume is estimated from disclosure ranges (midpoint by default; swi
            "Filings can lag trades by up to 45 days. Committee data is a current snapshot, "
            "not membership as of each trade date.")
 
+known, total = db.sector_coverage(con)
+if total:
+    st.caption(f"Sector is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%). Sectors come from SEC "
+               "SIC codes and are approximate; the committee-relevance flag only applies where a sector is known.")
+
 paper = db.paper_filings(con)
 if not paper.empty:
     st.info(f"**Coverage gap:** {len(paper)} paper filings from {paper['bioguide_id'].nunique()} members are not "

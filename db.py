@@ -61,8 +61,12 @@ CREATE TABLE IF NOT EXISTS filings (
     updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS ticker_sector (
-    ticker TEXT PRIMARY KEY,
-    sector TEXT NOT NULL
+    ticker          TEXT PRIMARY KEY,
+    sector          TEXT NOT NULL,
+    sic             INTEGER,
+    sic_description TEXT,
+    source          TEXT DEFAULT 'default',   -- default | override | sec | sec-fund | sec-miss
+    updated_at      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_trades_member ON trades(bioguide_id);
 CREATE INDEX IF NOT EXISTS idx_trades_ticker ON trades(ticker);
@@ -144,13 +148,17 @@ def _migrate(con):
             con.execute(f"ALTER TABLE members ADD COLUMN {col} {typ}")
     if "doc_id" not in cols("trades"):
         con.execute("ALTER TABLE trades ADD COLUMN doc_id TEXT")
+    for col, typ in (("sic", "INTEGER"), ("sic_description", "TEXT"), ("source", "TEXT DEFAULT 'default'"),
+                     ("updated_at", "TEXT")):
+        if col not in cols("ticker_sector"):
+            con.execute(f"ALTER TABLE ticker_sector ADD COLUMN {col} {typ}")
 
 
 def init_db(con):
     con.executescript(SCHEMA)
     _migrate(con)
     con.executemany(
-        "INSERT OR IGNORE INTO ticker_sector(ticker, sector) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO ticker_sector(ticker, sector, source) VALUES (?, ?, 'default')",
         DEFAULT_SECTORS.items(),
     )
     con.commit()
@@ -332,6 +340,14 @@ def paper_only_members(con):
               AND bioguide_id NOT IN (SELECT bioguide_id FROM trades)""")
     except Exception:
         return pd.DataFrame(columns=["bioguide_id", "name", "chamber", "state"])
+
+
+def sector_coverage(con):
+    """(trades with a known sector, total trades) - funds count as known, misses/unmapped do not."""
+    row = con.execute("""
+        SELECT SUM(CASE WHEN ts.sector IS NOT NULL AND ts.sector NOT IN ('Unclassified') THEN 1 ELSE 0 END), COUNT(*)
+        FROM trades t LEFT JOIN ticker_sector ts USING (ticker)""").fetchone()
+    return (row[0] or 0), row[1]
 
 
 def all_tickers(con):
