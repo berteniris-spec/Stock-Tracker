@@ -9,6 +9,9 @@ on:
       limit:
         description: Max new filings to process (blank = all)
         default: "25"
+      debug_docs:
+        description: Space-separated DocIDs to dump extracted text for (skips the import)
+        default: ""
 
 jobs:
   import:
@@ -19,7 +22,15 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt reportlab
+      - name: Dump extracted text for specific filings
+        if: ${{ inputs.debug_docs != '' }}
+        shell: bash
+        run: |
+          for d in ${{ inputs.debug_docs }}; do
+            python house_importer.py --year "${{ inputs.year }}" --debug "$d" > "debug_$d.log" 2>&1 || true
+          done
       - name: Test, ingest committees, import House PTRs
+        if: ${{ inputs.debug_docs == '' }}
         shell: bash
         run: |
           {
@@ -38,17 +49,22 @@ jobs:
               print("  ", tuple(r))
           PY
           } 2>&1 | tee run.log
-      - name: Publish log as an annotation
+      - name: Publish logs as annotations
         if: always()
         run: |
           python - <<'PY'
-          import os
-          lines = open("run.log", errors="replace").read().splitlines() if os.path.exists("run.log") else ["(no log)"]
-          body = "\n".join(l[:240] for l in lines[-70:])[-3800:]
-          body = body.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
-          print(f"::notice title=House import log::{body}")
+          import glob, os
+          for path in ["run.log"] + sorted(glob.glob("debug_*.log")):
+              if not os.path.exists(path):
+                  continue
+              lines = open(path, errors="replace").read().splitlines()
+              lines = lines[:90] if path.startswith("debug_") else lines[-70:]
+              body = "\n".join(l[:200] for l in lines)[:9000]
+              body = body.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+              print(f"::notice title={path}::{body}")
           PY
       - uses: actions/upload-artifact@v4
+        if: ${{ inputs.debug_docs == '' }}
         with:
           name: congress-db
           path: congress.db
