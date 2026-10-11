@@ -38,14 +38,16 @@ TX_TYPES = {"P": "Purchase", "S": "Sale", "E": "Exchange", "S (partial)": "Sale 
 OWNERS = {"SP": "Spouse", "DC": "Dependent Child", "JT": "Joint"}
 
 _DATE = r"\d{1,2}/\d{1,2}/\d{4}"
-ROW = re.compile(
-    r"\[(?P<atype>[A-Z]{2})\]\s+"
-    r"(?P<ttype>S\s*\(partial\)|P|S|E)\s+"
+# Real PTR rows read:  [OWNER] asset-start  TYPE  DATE  DATE  AMOUNT        <- "head" line
+#                      asset-continuation (TICKER) [XX]  [rest of a wrapped amount]
+HEAD = re.compile(
+    r"(?<!\S)(?P<ttype>S\s*\(partial\)|P|S|E)\s+"
     rf"(?P<tx>{_DATE})\s+(?P<notif>{_DATE})\s+"
-    r"(?P<amount>\$[\d,]+\s*-\s*\$[\d,]+|Over\s+\$[\d,]+)")
-MARKER = re.compile(r"\[[A-Z]{2}\]")
+    r"(?P<amount>\$[\d,]+\s*-\s*\$[\d,]+|\$[\d,]+\s*-(?!\s*\$)|Over\s+\$[\d,]+)")
+MARKER = re.compile(r"\[(?P<atype>[A-Z]{2})\]")
 TICKER_AT_END = re.compile(r"\(([A-Z][A-Z0-9.\-]{0,6})\)\s*$")
-OWNER_TAIL = re.compile(r"(?:^|\n)(SP|DC|JT) ([^:]*)$")   # owner code must start a line
+OWNER_START = re.compile(r"(SP|DC|JT) ")
+HEADER_LINE = re.compile(r"^(ID Owner Asset|Type Date Gains|\$200\?$)", re.M)
 
 
 # ---------- pure parsing helpers (unit-tested without network) ----------
@@ -54,37 +56,77 @@ def iso(d):
     return datetime.strptime(d, "%m/%d/%Y").date().isoformat()
 
 
+def _complete_amount(amount, *chunks):
+    """Finish an amount that wrapped across lines ("$15,001 -" ... "$50,000")."""
+    if not amount.endswith("-"):
+        return amount
+    for chunk in chunks:
+        m = re.match(r"\s*(\$[\d,]+)", chunk) or re.search(r"\$[\d,]+", chunk)
+        if m:
+            return f"{amount} {m.group(m.lastindex or 0)}"
+    return None
+
+
 def parse_ptr_text(text):
-    """Return (rows, marker_count). Each row is a dict of trade fields."""
-    flat = re.sub(r"[ \t]+", " ", text)              # collapse spaces but keep line breaks:
-    flat = re.sub(r" ?\n ?", "\n", flat)             # owner codes are only trusted at the start of a line
-    rows, prev_end = [], 0
-    for m in ROW.finditer(flat):
-        seg = flat[prev_end:m.start()].strip()
-        prev_end = m.end()
-        seg = seg.split("$200?")[-1].strip()          # drop the table header on the first row
-        tm = TICKER_AT_END.search(seg)
-        ticker = tm.group(1) if tm else ""
-        head = seg[:tm.start()].strip() if tm else seg
-        om = OWNER_TAIL.search(head)
+    """Return (rows, marker_count). Each row is a dict of trade fields.
+
+    Two layouts occur in real filings (a row's first line is its "head": type, two dates, amount):
+      inline : [OWNER] Short Name (TICK) [ST]  P  DATE  DATE  $a - $b
+      split  : [OWNER] Long Name start         P  DATE  DATE  $a - $b      (amount may wrap)
+               name continuation (TICK) [ST]   [rest of wrapped amount]
+    """
+    text = text.replace("\x00", "")
+    text = HEADER_LINE.sub("", text)                    # table header repeats at page breaks, even mid-row
+    text = re.sub(r"[ \t]+", " ", text)
+    heads = list(HEAD.finditer(text))
+    starts = [text.rfind("\n", 0, h.start()) + 1 for h in heads] + [len(text)]
+    rows = []
+    for i, h in enumerate(heads):
+        pre = text[starts[i]:h.start()].strip()
+        tail = text[h.end():starts[i + 1]]
+        amount = re.sub(r"\s+", " ", h.group("amount"))
+        pm = MARKER.search(pre)
+        if pm:                                           # inline layout
+            atype, name_part, rest = pm.group("atype"), pre[:pm.start()].strip(), tail[:60]
+            amount = _complete_amount(amount, rest)
+            cont = ""
+        else:                                            # split layout
+            mk = MARKER.search(tail)
+            if not mk:
+                continue
+            atype, name_part, cont = mk.group("atype"), pre, tail[:mk.start()]
+            m2 = re.search(r"\$[\d,]+", cont) if amount.endswith("-") else None
+            if m2:                                       # wrapped amount's tail sits before the marker
+                cont = cont[:m2.start()] + cont[m2.end():]
+                amount = f"{amount} {m2.group(0)}"
+            else:
+                amount = _complete_amount(amount, tail[mk.end():mk.end() + 40])
+        if amount is None:
+            continue
+        om = OWNER_START.match(name_part)
+        owner = OWNERS[om.group(1)] if om else "Self"
         if om:
-            owner, asset = OWNERS[om.group(1)], om.group(2)
+            name_part = name_part[om.end():]
+        # the ticker is the "(TICK)" right before the marker: end of the name (inline) or of the continuation
+        ticker = ""
+        if pm:
+            tm = TICKER_AT_END.search(name_part)
+            if tm:
+                ticker, name_part = tm.group(1), name_part[:tm.start()]
         else:
-            owner = "Self"
-            asset = head.splitlines()[-1] if head else ""   # best effort: last line, past any F S:/D:/C: lines
-        asset = asset.replace("\n", " ")
-        ttype = re.sub(r"\s+", " ", m.group("ttype")).replace("( ", "(")
+            cont = cont.strip()
+            tm = TICKER_AT_END.search(cont) or TICKER_AT_END.search(name_part)
+            if tm and tm.string is cont:
+                ticker, cont = tm.group(1), cont[:tm.start()]
+            elif tm:                                     # ticker ended the head line's name part
+                ticker, name_part = tm.group(1), name_part[:tm.start()]
+        asset = re.sub(r"\s+", " ", f"{name_part} {cont}").strip()[-80:].strip()
+        ttype = re.sub(r"\s+", " ", h.group("ttype")).replace("( ", "(")
         rows.append({
-            "ticker": ticker,
-            "asset": asset.strip()[-80:].strip(),
-            "owner": owner,
-            "asset_type": m.group("atype"),
+            "ticker": ticker, "asset": asset, "owner": owner, "asset_type": atype,
             "tx_type": TX_TYPES.get(ttype, ttype),
-            "tx_date": iso(m.group("tx")),
-            "disclosure_date": iso(m.group("notif")),
-            "amount": re.sub(r"\s+", " ", m.group("amount")),
-        })
-    return rows, len(MARKER.findall(flat))
+            "tx_date": iso(h.group("tx")), "disclosure_date": iso(h.group("notif")), "amount": amount})
+    return rows, len(MARKER.findall(text))
 
 
 def parse_index_xml(xml_bytes):

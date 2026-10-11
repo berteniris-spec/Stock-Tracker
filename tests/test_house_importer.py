@@ -15,26 +15,47 @@ INDEX_XML = b"""<?xml version="1.0"?><FinancialDisclosure>
 <Member><Prefix>Hon.</Prefix><Last>De La Cruz</Last><First>Ana</First><Suffix/><FilingType>P</FilingType><StateDst>TX00</StateDst><Year>2026</Year><FilingDate>2/2/2026</FilingDate><DocID>1000004</DocID></Member>
 </FinancialDisclosure>"""
 
-# Lines as a text-layer PTR is expected to extract (best guess at the real layout).
+# Mirrors the structure of real House PTR text layers (seen via the workflow's debug mode):
+# head line = [owner] asset-start, type, 2 dates, amount; next line = asset-continuation (TICKER) [XX].
 PTR_LINES = [
-    "Periodic Transaction Report",
     "Filing ID #1000001",
-    "Name: Hon. Erin Example  Status: Member  State/District: CA11",
-    "T Transactions",
-    "ID Owner Asset Transaction Type Date Notification Date Amount Cap. Gains > $200?",
-    "SP Lockheed Martin Corporation (LMT) [ST] P 01/15/2026 01/20/2026 $1,001 - $15,000",
+    "P\x00\x00\x00 T\x00\x00\x00 R\x00\x00",
+    "Clerk of the House of Representatives \u2022 Legislative Resource Center \u2022 Washington, DC 20515",
+    "Name: Hon. Erin Example",
+    "State/District: CA11",
+    "ID Owner Asset Transaction Date Notification Amount Cap.",
+    "Type Date Gains >",
+    "$200?",
+    "SP Lockheed Martin Corporation Common P 01/15/2026 01/20/2026 $15,001 -",
+    "Stock (LMT) [ST] $50,000",
+    "F\x00\x00 S\x00\x00: New",
+    "S\x00\x00 O\x00: Example Brokerage > Growth Account",
+    "D: Sold per plan. SP and JT are not owners here: T \u2013 37 shares sold @ $27.64/share",
+    "Amazon.com, Inc. - Common Stock S (partial) 03/16/2026 03/16/2026 $1,001 - $15,000",
+    "(AMZN) [ST]",
     "F S: New",
-    "D: Purchased shares in brokerage account",
-    "Apple Inc. (AAPL) [ST] S (partial) 02/03/2026 02/10/2026 $15,001 - $50,000",
+    "Berkshire Hathaway Inc. New S (partial) 03/16/2026 03/16/2026 $1,001 - $15,000",
+    "Common Stock (BRK.B) [ST]",
     "F S: New",
-    "JT Vanguard 500 Index Fund [MF] E 02/11/2026 02/12/2026 $100,001 -",
-    "$250,000",
+    "ID Owner Asset Transaction Date Notification Amount Cap.",
+    "Type Date Gains >",
+    "$200?",
+    "S O: Example Brokerage",
+    "DIA - State Street SPDR Dow Jones S (partial) 03/16/2026 03/16/2026 $1,001 - $15,000",
+    "Indust Avg ETF Trust NYSEARCA:",
+    "DIA [OT]",
     "F S: New",
-    "DC Treasury Bond 2031 [GS] S 03/01/2026 03/05/2026 Over $1,000,000",
+    "L: US",
+    "JT Vanguard 500 Index Fund E 02/11/2026 02/12/2026 $100,001 - $250,000",
+    "[MF]",
     "F S: New",
-    "C: Comment that mentions SP and JT but is not a row",
+    "DC Treasury Bond 2031 S 03/01/2026 03/05/2026 Over $1,000,000",
+    "[GS]",
+    "F S: New",
     "Microsoft Corporation (MSFT) [ST] P 03/09/2026 03/12/2026 $1,001 - $15,000",
     "F S: New",
+    "* For the complete list of asset type abbreviations, please visit https://fd.house.gov/reference/asset-type-codes.aspx.",
+    "I CERTIFY that the statements I have made on the attached Periodic Transaction Report are true.",
 ]
 
 
@@ -57,17 +78,33 @@ def test_amounts():
 
 def test_parse_text():
     rows, markers = hi.parse_ptr_text("\n".join(PTR_LINES))
-    assert markers == 5 and len(rows) == 5, (markers, len(rows))
+    assert markers == 7 and len(rows) == 7, (markers, len(rows))
     r = rows
-    assert (r[0]["ticker"], r[0]["owner"], r[0]["tx_type"], r[0]["amount"]) == ("LMT", "Spouse", "Purchase", "$1,001 - $15,000")
+    # wrapped amount, owner code, asset continued on the next line
+    assert (r[0]["ticker"], r[0]["owner"], r[0]["tx_type"], r[0]["amount"]) == ("LMT", "Spouse", "Purchase", "$15,001 - $50,000")
+    assert r[0]["asset"] == "Lockheed Martin Corporation Common Stock", r[0]["asset"]
     assert r[0]["tx_date"] == "2026-01-15" and r[0]["disclosure_date"] == "2026-01-20"
-    assert (r[1]["ticker"], r[1]["owner"], r[1]["tx_type"]) == ("AAPL", "Self", "Sale (Partial)")
-    assert r[1]["asset"] == "Apple Inc.", r[1]["asset"]
-    assert r[0]["asset"] == "Lockheed Martin Corporation", r[0]["asset"]
-    assert (r[2]["ticker"], r[2]["owner"], r[2]["tx_type"], r[2]["amount"]) == ("", "Joint", "Exchange", "$100,001 - $250,000")
-    assert r[3]["owner"] == "Dependent Child" and r[3]["amount"] == "Over $1,000,000"
-    assert (r[4]["ticker"], r[4]["owner"]) == ("MSFT", "Self")
-    print("  rows:", [(x["ticker"] or x["asset"][:18], x["owner"], x["tx_type"]) for x in r])
+    # ticker on the following line, partial sale
+    assert (r[1]["ticker"], r[1]["owner"], r[1]["tx_type"], r[1]["asset"]) == ("AMZN", "Self", "Sale (Partial)", "Amazon.com, Inc. - Common Stock")
+    assert (r[2]["ticker"], r[2]["asset"]) == ("BRK.B", "Berkshire Hathaway Inc. New Common Stock")
+    # page-break header between rows, no parenthesised ticker, [OT]
+    assert (r[3]["ticker"], r[3]["asset_type"]) == ("", "OT") and r[3]["asset"].startswith("DIA - State Street")
+    assert (r[4]["owner"], r[4]["tx_type"], r[4]["amount"], r[4]["asset_type"]) == ("Joint", "Exchange", "$100,001 - $250,000", "MF")
+    assert (r[5]["owner"], r[5]["amount"]) == ("Dependent Child", "Over $1,000,000")
+    # inline layout: ticker + marker before the type, no owner
+    assert (r[6]["ticker"], r[6]["asset"], r[6]["owner"], r[6]["tx_type"]) == ("MSFT", "Microsoft Corporation", "Self", "Purchase")
+    print("  rows:", [(x["ticker"] or x["asset"][:14], x["owner"], x["tx_type"]) for x in r])
+
+
+def test_inline_variants():
+    rows, markers = hi.parse_ptr_text(
+        "AT&T Inc. (T) [ST] S (partial) 03/16/2026 03/16/2026 $1,001 - $15,000\nF S: New\n"
+        "Invesco QQQ [OT] S (partial) 03/16/2026 03/16/2026 $1,001 - $15,000\nF S: New\n"
+        "SP Costco Wholesale Corporation (COST) [ST] P 04/01/2026 04/02/2026 $15,001 -\n$50,000\nF S: New")
+    assert markers == 3 and len(rows) == 3
+    assert [(r["ticker"], r["asset"], r["owner"]) for r in rows] == [
+        ("T", "AT&T Inc.", "Self"), ("", "Invesco QQQ", "Self"), ("COST", "Costco Wholesale Corporation", "Spouse")]
+    assert rows[2]["amount"] == "$15,001 - $50,000"
 
 
 def test_pdf_roundtrip():
@@ -80,7 +117,7 @@ def test_pdf_roundtrip():
         p = Path(d) / "x.pdf"
         make_pdf(p, PTR_LINES)
         rows, markers = hi.parse_ptr_text(hi.extract_text(p))
-        assert len(rows) == markers == 5
+        assert len(rows) == markers == 7
 
 
 def test_index_and_matching():
@@ -102,8 +139,8 @@ def test_index_and_matching():
         rows, _ = hi.parse_ptr_text("\n".join(PTR_LINES))
         ins = lambda: sum(db.insert_trade(con, "E000001", r["tx_date"], r["ticker"], r["tx_type"], r["amount"],
                                           asset=r["asset"], owner=r["owner"], doc_id="1000001") for r in rows)
-        assert ins() == 5 and ins() == 0
-        assert con.execute("SELECT SUM(amount_est) FROM trades").fetchone()[0] == 8000 + 32500 + 175000 + 1000000 + 8000
+        assert ins() == 7 and ins() == 0
+        assert con.execute("SELECT SUM(amount_est) FROM trades").fetchone()[0] == 32500 + 8000 + 8000 + 8000 + 175000 + 1000000 + 8000
 
 
 if __name__ == "__main__":
