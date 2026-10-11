@@ -2,15 +2,34 @@
 
 Run:  streamlit run app.py
 """
+import os
+import shutil
+import urllib.request
+
 import streamlit as st
 
 import db
 
+# The nightly GitHub Action publishes the database to the `data` branch; the app fetches it from there.
+DB_URL = os.environ.get("DB_URL", "https://raw.githubusercontent.com/berteniris-spec/Stock-Tracker/data/congress.db")
+
+
+def download_db(url=DB_URL):
+    tmp = db.DB_PATH.with_suffix(".tmp")
+    with urllib.request.urlopen(url, timeout=60) as r, open(tmp, "wb") as f:
+        shutil.copyfileobj(r, f)
+    os.replace(tmp, db.DB_PATH)
+
+
 st.set_page_config(page_title="Congress Trades", layout="wide")
 
-if not db.DB_PATH.exists():
-    st.error("No database yet. Run `python ingest_committees.py` and `python load_trades.py trades.csv` first.")
-    st.stop()
+if not db.DB_PATH.exists():  # first start on a fresh host: fetch the published database
+    try:
+        download_db()
+    except Exception as e:
+        st.error(f"No local database and the published one could not be fetched ({e}). "
+                 "Run `python ingest_committees.py` and `python house_importer.py` locally, or set DB_URL.")
+        st.stop()
 
 
 @st.cache_resource
@@ -41,6 +60,12 @@ st.caption("Volume is estimated from disclosure ranges (midpoint; floor for open
            "not membership as of each trade date.")
 
 page = st.sidebar.radio("View", ["Overview", "Member", "Committee", "Ticker"])
+if st.sidebar.button("Refresh data from GitHub"):
+    try:
+        download_db()
+        st.rerun()
+    except Exception as e:
+        st.sidebar.error(f"Refresh failed: {e}")
 
 if page == "Overview":
     c1, c2 = st.columns(2)

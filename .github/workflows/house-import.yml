@@ -1,54 +1,93 @@
 name: House import
 
 on:
+  schedule:
+    - cron: "23 3 * * *"        # nightly, 03:23 UTC
   workflow_dispatch:
     inputs:
       year:
-        description: Filing year
-        default: "2026"
+        description: Filing year (blank = current year)
+        default: ""
       limit:
         description: Max new filings to process (blank = all)
-        default: "25"
+        default: ""
       debug_docs:
         description: Space-separated DocIDs to dump extracted text for (skips the import)
         default: ""
 
+permissions:
+  contents: write
+
+concurrency:
+  group: house-import
+  cancel-in-progress: false
+
 jobs:
   import:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      YEAR_IN: ${{ inputs.year }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt reportlab
+
       - name: Dump extracted text for specific filings
         if: ${{ inputs.debug_docs != '' }}
         shell: bash
         run: |
           for d in ${{ inputs.debug_docs }}; do
-            python house_importer.py --year "${{ inputs.year }}" --debug "$d" > "debug_$d.log" 2>&1 || true
+            python house_importer.py --year "${YEAR_IN:-$(date +%Y)}" --debug "$d" > "debug_$d.log" 2>&1 || true
           done
-      - name: Test, ingest committees, import House PTRs
+
+      - name: Restore previous database
+        if: ${{ inputs.debug_docs == '' }}
+        shell: bash
+        run: |
+          if git fetch --depth=1 origin data 2>/dev/null; then
+            git show FETCH_HEAD:congress.db > congress.db.tmp && mv congress.db.tmp congress.db
+            echo "restored $(du -h congress.db | cut -f1) database from the data branch"
+          else
+            echo "no previous database; starting fresh"
+          fi
+
+      - name: Test, refresh committees, import House PTRs
         if: ${{ inputs.debug_docs == '' }}
         shell: bash
         run: |
           {
             python tests/test_house_importer.py
             python ingest_committees.py
-            python house_importer.py --year "${{ inputs.year }}" ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
+            python house_importer.py --year "${YEAR_IN:-$(date +%Y)}" ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
             python - <<'PY'
           import db
           c = db.connect()
           print("filings by status:", [tuple(r) for r in c.execute("select status, count(*) from filings group by status")])
+          print("totals:", tuple(c.execute("select count(*), count(distinct bioguide_id), min(tx_date), max(tx_date) from trades where source='house-clerk'").fetchone()))
           print("partial / no_text examples (doc_id, filer, status, parsed, markers):")
-          for r in c.execute("select doc_id, filer, status, rows_parsed, markers from filings where status in ('partial','no_text') limit 8"):
-              print("  ", tuple(r))
-          print("sample trades (member, date, ticker, asset, type, owner, amount):")
-          for r in c.execute("select m.name, t.tx_date, t.ticker, t.asset, t.tx_type, t.owner, t.amount_label from trades t join members m using(bioguide_id) order by t.id limit 15"):
+          for r in c.execute("select doc_id, filer, status, rows_parsed, markers from filings where status in ('partial','no_text','fetch_failed') limit 12"):
               print("  ", tuple(r))
           PY
           } 2>&1 | tee run.log
+
+      - name: Publish database to the data branch
+        if: ${{ inputs.debug_docs == '' }}
+        shell: bash
+        run: |
+          sqlite3 congress.db "VACUUM;" 2>/dev/null || python -c "import sqlite3; sqlite3.connect('congress.db').execute('VACUUM')"
+          mkdir ../publish && cp congress.db ../publish/
+          cd ../publish
+          git init -q -b data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add congress.db
+          git commit -q -m "Update congress.db ($(date -u +%Y-%m-%dT%H:%MZ))"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" data
+          echo "published $(du -h congress.db | cut -f1) to the data branch"
+
       - name: Publish logs as annotations
         if: always()
         run: |
@@ -63,8 +102,3 @@ jobs:
               body = body.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
               print(f"::notice title={path}::{body}")
           PY
-      - uses: actions/upload-artifact@v4
-        if: ${{ inputs.debug_docs == '' }}
-        with:
-          name: congress-db
-          path: congress.db
