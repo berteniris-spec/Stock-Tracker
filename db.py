@@ -83,6 +83,14 @@ CREATE TABLE IF NOT EXISTS ticker_price (
     fetched_at TEXT,
     source     TEXT
 );
+CREATE TABLE IF NOT EXISTS ticker_valuation (
+    ticker     TEXT PRIMARY KEY,
+    pe         REAL,                          -- trailing P/E (NULL when earnings are negative or unknown)
+    forward_pe REAL,
+    peg        REAL,
+    fetched_at TEXT,
+    source     TEXT
+);
 CREATE TABLE IF NOT EXISTS fx_rate (
     pair       TEXT PRIMARY KEY,              -- 'USD_PER_EUR'
     rate       REAL,
@@ -266,9 +274,10 @@ def member_trades(con, bioguide_id):
     df = _df(con, """
         SELECT t.tx_date, t.disclosure_date, t.ticker, t.asset, t.tx_type, t.owner,
                t.amount_label, t.amount_min, t.amount_max, t.amount_est,
-               ts.sector, ti.exchange, tp.price
+               ts.sector, ti.exchange, tp.price, tv.pe, tv.forward_pe, tv.peg
         FROM trades t LEFT JOIN ticker_sector ts USING (ticker)
         LEFT JOIN ticker_info ti USING (ticker) LEFT JOIN ticker_price tp USING (ticker)
+        LEFT JOIN ticker_valuation tv USING (ticker)
         WHERE t.bioguide_id = ? ORDER BY t.tx_date DESC""", (bioguide_id,))
     sectors = _member_sectors(con, bioguide_id)
     df["committee_relevant"] = df["sector"].isin(sectors)
@@ -289,11 +298,12 @@ def committee_trades(con, committee_id):
     df = _df(con, """
         SELECT m.name AS member, t.tx_date, t.ticker, t.asset, t.tx_type,
                t.amount_label, t.amount_min, t.amount_max, t.amount_est, ts.sector,
-               ti.exchange, tp.price
+               ti.exchange, tp.price, tv.pe, tv.forward_pe, tv.peg
         FROM memberships ms JOIN members m USING (bioguide_id)
         JOIN trades t USING (bioguide_id)
         LEFT JOIN ticker_sector ts USING (ticker)
         LEFT JOIN ticker_info ti USING (ticker) LEFT JOIN ticker_price tp USING (ticker)
+        LEFT JOIN ticker_valuation tv USING (ticker)
         WHERE ms.committee_id = ? ORDER BY t.tx_date DESC""", (committee_id,))
     sectors = set(COMMITTEE_SECTORS.get(committee_id[:4], []))
     df["committee_relevant"] = df["sector"].isin(sectors)
@@ -320,11 +330,12 @@ def ticker_summary(con, ticker):
 
 def top_tickers(con, limit=15):
     return _df(con, f"""
-        SELECT t.ticker, COALESCE(ts.sector, 'Unmapped') AS sector, ti.exchange, tp.price,
+        SELECT t.ticker, COALESCE(ts.sector, 'Unmapped') AS sector, ti.exchange, tp.price, tv.pe, tv.forward_pe, tv.peg,
                COUNT(*) AS trades, COUNT(DISTINCT t.bioguide_id) AS members,
                COALESCE(SUM({_est()}), 0) AS est_volume
         FROM trades t LEFT JOIN ticker_sector ts USING (ticker)
         LEFT JOIN ticker_info ti USING (ticker) LEFT JOIN ticker_price tp USING (ticker)
+        LEFT JOIN ticker_valuation tv USING (ticker)
         WHERE t.ticker IS NOT NULL AND t.ticker <> ''
         GROUP BY t.ticker ORDER BY est_volume DESC LIMIT ?""", (limit,))
 
@@ -383,11 +394,12 @@ def ticker_profile(con, ticker):
     """Name, kind, exchange and last close for one ticker (all None when unknown)."""
     row = con.execute("""
         SELECT ti.name, ti.kind, ti.exchange_code, ti.exchange, ts.sector,
-               tp.price, tp.prev_close, tp.as_of
+               tp.price, tp.prev_close, tp.as_of, tv.pe, tv.forward_pe, tv.peg
         FROM (SELECT ? AS ticker) q
         LEFT JOIN ticker_info ti USING (ticker) LEFT JOIN ticker_sector ts USING (ticker)
-        LEFT JOIN ticker_price tp USING (ticker)""", (ticker,)).fetchone()
-    keys = ("name", "kind", "exchange_code", "exchange", "sector", "price", "prev_close", "as_of")
+        LEFT JOIN ticker_price tp USING (ticker) LEFT JOIN ticker_valuation tv USING (ticker)""", (ticker,)).fetchone()
+    keys = ("name", "kind", "exchange_code", "exchange", "sector", "price", "prev_close", "as_of",
+            "pe", "forward_pe", "peg")
     return dict(zip(keys, tuple(row)))
 
 

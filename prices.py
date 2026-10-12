@@ -102,6 +102,52 @@ def update_prices(con, download=yahoo_download, limit=None, chunk=CHUNK):
     return priced, len(tickers)
 
 
+def _num(v):
+    """A finite positive number, else None (Yahoo returns NaN, strings or negatives for 'no meaningful value')."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return v if v == v and 0 < v < 1e6 else None
+
+
+def yahoo_valuation(symbol):
+    """(pe, forward_pe, peg) for one symbol from Yahoo's quote summary; raises on a failed request."""
+    import yfinance as yf
+    info = yf.Ticker(symbol).info or {}
+    return (_num(info.get("trailingPE")), _num(info.get("forwardPE")),
+            _num(info.get("trailingPegRatio")) or _num(info.get("pegRatio")))
+
+
+def update_valuations(con, fetch=yahoo_valuation, limit=None, workers=4):
+    """Fetch P/E, forward P/E and PEG for traded stocks (ETFs have none). Returns (stored, attempted)."""
+    from concurrent.futures import ThreadPoolExecutor
+    tickers = [t for t in tickers_to_price(con, limit)
+               if (con.execute("SELECT kind FROM ticker_info WHERE ticker = ?", (t,)).fetchone() or [None])[0] != "etf"]
+    now = datetime.now(timezone.utc).isoformat()
+
+    def one(t):
+        for attempt in range(2):
+            try:
+                return t, fetch(yahoo_symbol(t))
+            except Exception:
+                time.sleep(2)
+        return t, None
+
+    stored = 0
+    with ThreadPoolExecutor(workers) as ex:
+        for t, vals in ex.map(one, tickers):
+            if vals is None:                          # request failed: keep the previous values
+                continue
+            with con:
+                con.execute(
+                    "INSERT INTO ticker_valuation(ticker, pe, forward_pe, peg, fetched_at, source) VALUES (?,?,?,?,?,'yahoo') "
+                    "ON CONFLICT(ticker) DO UPDATE SET pe=excluded.pe, forward_pe=excluded.forward_pe, peg=excluded.peg, "
+                    "fetched_at=excluded.fetched_at, source=excluded.source", (t, *vals, now))
+            stored += 1
+    return stored, len(tickers)
+
+
 def update_fx(con, fetch=fetch_ecb):
     rate, day = fetch()
     with con:
@@ -126,6 +172,11 @@ def main():
     print(f"priced {priced}/{attempted} tickers this run; {have}/{total} tickers have a price (newest close {newest})")
     if attempted and not priced:
         print("WARNING: no prices fetched; Yahoo may be blocking this host")
+    stored, attempted = update_valuations(con, limit=args.limit)
+    print(f"valuation ratios stored for {stored}/{attempted} stocks; with P/E: "
+          f"{con.execute('SELECT COUNT(pe) FROM ticker_valuation').fetchone()[0]}, forward P/E: "
+          f"{con.execute('SELECT COUNT(forward_pe) FROM ticker_valuation').fetchone()[0]}, PEG: "
+          f"{con.execute('SELECT COUNT(peg) FROM ticker_valuation').fetchone()[0]}")
     missing = [r[0] for r in con.execute(
         "SELECT DISTINCT t.ticker FROM trades t LEFT JOIN ticker_price tp USING (ticker) "
         "WHERE t.ticker <> '' AND tp.ticker IS NULL ORDER BY 1 LIMIT 25")]

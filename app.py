@@ -68,7 +68,11 @@ LABELS = {"est_volume": st.column_config.NumberColumn("Volume"),
           "amount_min": st.column_config.NumberColumn("Min"),
           "amount_max": st.column_config.NumberColumn("Max"),
           "price": st.column_config.NumberColumn("Last close"),
-          "exchange": "Exchange"}
+          "exchange": "Exchange",
+          "pe": st.column_config.NumberColumn("P/E", help="Trailing price/earnings (last 12 months). Blank = no positive earnings or no data."),
+          "forward_pe": st.column_config.NumberColumn("Fwd P/E", help="Price / analysts' expected next-12-month earnings."),
+          "peg": st.column_config.NumberColumn("PEG", help="P/E divided by expected earnings growth. Around 1 or below is often read as "
+                                               "cheap relative to growth; definitions vary by data provider.")}
 MONEY_COLS = ("est_volume", "amount_est", "amount_min", "amount_max")
 PRICE_COLS = ("price",)
 
@@ -83,6 +87,8 @@ def show(df):
             df[c] = df[c].map(lambda v: conv(v) if v == v and v is not None else v)   # stays numeric: sorting still works
     fmt = {c: sym() + "{:,.0f}" for c in MONEY_COLS if c in df.columns}
     fmt.update({c: sym() + "{:,.2f}" for c in PRICE_COLS if c in df.columns})
+    fmt.update({c: "{:,.1f}" for c in ("pe", "forward_pe") if c in df.columns})
+    fmt.update({c: "{:,.2f}" for c in ("peg",) if c in df.columns})
     st.dataframe(df.style.format(fmt, na_rep="") if fmt else df,
                  hide_index=True, column_config=LABELS, use_container_width=True)
 
@@ -228,6 +234,18 @@ else:
     if prof["as_of"]:
         st.caption(f"Price is the end-of-day close on {prof['as_of']}, refreshed nightly; it is not a live quote. "
                    "Trades below were disclosed up to 45 days after they happened.")
+    if prof["kind"] != "etf":
+        a, b, c = st.columns(3)
+        na = "n/a"
+        a.metric("P/E (trailing)", f"{prof['pe']:.1f}" if prof["pe"] else na,
+                 help="Price / earnings over the last 12 months. n/a when the company has no positive earnings or Yahoo has no data.")
+        b.metric("Forward P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na,
+                 help="Price / analysts' expected earnings for the next 12 months.")
+        c.metric("PEG ratio", f"{prof['peg']:.2f}" if prof["peg"] else na,
+                 help="P/E divided by expected earnings growth. Definitions differ between data providers, so compare "
+                      "companies using the same source only. n/a when growth is unknown or negative.")
+        st.caption("Ratios come from Yahoo Finance, refreshed nightly, and are shown for reference: a low or high number is not "
+                   "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies).")
     a, b = st.columns(2)
     a.metric("Trades", len(df))
     b.metric(vol_label, usd(db.volume_of(df)))

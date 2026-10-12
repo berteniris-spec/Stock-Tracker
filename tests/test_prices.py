@@ -68,6 +68,27 @@ def test_update_prices():
     assert db.ticker_profile(con, "ZZZ")["price"] is None
 
 
+def test_valuation():
+    con = _con(tempfile.mkdtemp())
+    con.execute("INSERT INTO ticker_info(ticker, kind) VALUES ('NOPE', 'etf')")
+    seen = []
+
+    def fetch(sym):
+        seen.append(sym)
+        if sym == "AAPL":
+            return (30.5, 28.0, 2.1)
+        raise RuntimeError("boom")
+
+    assert prices.update_valuations(con, fetch, workers=1) == (1, 2)          # NOPE is an ETF (skipped); BRK-B fails
+    assert "NOPE" not in seen and "BRK-B" in seen
+    assert tuple(con.execute("select pe, forward_pe, peg from ticker_valuation where ticker='AAPL'").fetchone()) == (30.5, 28.0, 2.1)
+    prices.update_valuations(con, lambda s: (None, None, None), workers=1)      # all three unknown overwrite with NULLs
+    assert db.ticker_profile(con, "AAPL")["pe"] is None
+    prices.update_valuations(con, lambda s: 1 / 0, workers=1)                   # a failed run keeps what we had
+    assert con.execute("select count(*) from ticker_valuation").fetchone()[0] == 2
+    assert prices._num(float("nan")) is None and prices._num(-3) is None and prices._num("x") is None and prices._num(12.5) == 12.5
+
+
 def test_brokers():
     verdict, per = brokers.availability("equity", "NMS")
     assert per["DEGIRO"] == "Yes" and per["Trading 212"].startswith("Likely")
