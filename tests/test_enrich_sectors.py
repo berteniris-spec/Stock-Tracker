@@ -56,7 +56,7 @@ def test_fd_sector_mapping():
 def test_enrich_flow():
     with tempfile.TemporaryDirectory() as d:
         con = _con(d)
-        assert set(es.pending(con)) == {"LMTX", "BRKX.B", "NVDX", "UNHX", "DALX", "DUP", "QQQX", "NOSEC", "NOPE"}
+        assert set(es.pending(con)) == {"LMTX", "BRKX.B", "NVDX", "UNHX", "DALX", "DUP", "QQQX", "NOSEC", "NOPE", "AAPL", "XOM"}
         n, tally = es.enrich(con, fake_fetch)
         assert tally == {"classified": 6, "etf": 1, "miss": 2}, tally
         get = lambda t: tuple(con.execute("select sector, source from ticker_sector where ticker=?", (t,)).fetchone())
@@ -71,8 +71,26 @@ def test_enrich_flow():
         assert get("NOPE") == ("Unclassified", "fd-miss")
         assert get("AAPL")[1] == "default"                             # starter map never overwritten
         assert con.execute("select industry from ticker_sector where ticker='LMTX'").fetchone()[0] == "Industrial Goods / Aerospace & Defense"
+        info = lambda t: tuple(con.execute("select kind, exchange_code, exchange, name from ticker_info where ticker=?", (t,)).fetchone())
+        assert info("LMTX") == ("equity", "NYQ", "NYSE", "Defense-like")
+        assert info("NVDX") == ("equity", "NMS", "Nasdaq", "Nvidia-like")
+        assert info("DUP")[:3] == ("equity", "NMS", "Nasdaq")
+        assert info("BRKX.B")[:3] == ("equity", "NYQ", "NYSE")
+        assert info("QQQX") == ("etf", "NMS", "Nasdaq", "Some ETF")
+        assert info("NOPE") == (None, None, None, None)
+        assert info("AAPL") == (None, None, None, None)                # starter-map ticker unknown to the source: sector kept
         assert db.sector_coverage(con) == (9, 12)                      # unknown: NOSEC, NOPE, and the blank ticker
         assert es.enrich(con, lambda u: 1 / 0)[0] == 0                 # nothing pending -> nothing downloaded
+
+
+def test_info_backfill_keeps_sector():
+    """A ticker already classified before ticker_info existed gets its exchange without its sector changing."""
+    with tempfile.TemporaryDirectory() as d:
+        con = _con(d)
+        es._save(con, "LMTX", "Industrials", "override")
+        es.enrich(con, fake_fetch)
+        assert tuple(con.execute("select sector, source from ticker_sector where ticker='LMTX'").fetchone()) == ("Industrials", "override")
+        assert con.execute("select exchange from ticker_info where ticker='LMTX'").fetchone()[0] == "NYSE"
 
 
 def test_miss_retry_and_missing_files():

@@ -33,7 +33,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt reportlab
+      - run: pip install -r requirements.txt reportlab yfinance
 
       - name: Dump extracted text for specific filings
         if: ${{ inputs.debug_docs != '' }}
@@ -61,9 +61,11 @@ jobs:
           {
             python tests/test_house_importer.py
             python tests/test_enrich_sectors.py
+            python tests/test_prices.py
             python ingest_committees.py
             python house_importer.py --year "${YEAR_IN:-$(date +%Y)}" ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
             python enrich_sectors.py || echo "sector enrichment failed (continuing without it)"
+            python prices.py || echo "price update failed (continuing without it)"
             python - <<'PY'
           import db
           c = db.connect()

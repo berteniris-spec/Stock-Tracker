@@ -40,6 +40,10 @@ SECTOR_MAP = {
 }
 
 
+EXCHANGE_NAMES = {"NMS": "Nasdaq", "NGM": "Nasdaq", "NCM": "Nasdaq", "NYQ": "NYSE", "ASE": "NYSE American",
+                  "PCX": "NYSE Arca", "BTS": "Cboe BZX", "PNK": "OTC (Pink)"}
+
+
 def fd_sector(sector, industry_group, industry):
     """Map a FinanceDatabase classification to this app's sector buckets."""
     if isinstance(industry, str) and industry.strip() == "Aerospace & Defense":
@@ -69,15 +73,15 @@ def _norm(t):
 
 
 def load_classification(fetch=http_get, exchanges=EXCHANGES):
-    """Return ({ticker: (bucket, industry text)}, {etf tickers}) from the US-venue CSVs."""
-    equities, etfs = {}, set()
+    """Return ({ticker: (bucket, industry text, venue code, name)}, {etf ticker: (venue code, name)})."""
+    equities, etfs = {}, {}
     for ex in exchanges:
         raw = fetch(f"{FD_BASE}/equities/{ex}.csv")
         if raw is None:
             print(f"  equities/{ex}.csv not found, skipping")
             continue
         df = pd.read_csv(io.BytesIO(raw), low_memory=False,
-                         usecols=lambda c: c in ("symbol", "sector", "industry_group", "industry", "market_cap", "delisted"))
+                         usecols=lambda c: c in ("symbol", "name", "sector", "industry_group", "industry", "market_cap", "delisted"))
         df = df[df["symbol"].notna()].copy()
         df["_live"] = (~df["delisted"].fillna(False).astype(bool)).astype(int) if "delisted" in df else 1
         df["_cap"] = df["market_cap"].map(CAP_RANK).fillna(-1) if "market_cap" in df else -1
@@ -87,22 +91,36 @@ def load_classification(fetch=http_get, exchanges=EXCHANGES):
             if key not in equities:                  # earlier venues win
                 bucket = fd_sector(row.sector, row.industry_group, row.industry)
                 text = " / ".join(str(x) for x in (row.industry_group, row.industry) if isinstance(x, str))
-                equities[key] = (bucket, text or None)
+                equities[key] = (bucket, text or None, ex, row.name if isinstance(row.name, str) else None)
     for ex in exchanges:
         raw = fetch(f"{FD_BASE}/etfs/{ex}.csv")
         if raw is not None:
-            etfs.update(_norm(s) for s in pd.read_csv(io.BytesIO(raw), usecols=["symbol"], low_memory=False)["symbol"].dropna())
+            df = pd.read_csv(io.BytesIO(raw), low_memory=False,
+                             usecols=lambda c: c in ("symbol", "name")).dropna(subset=["symbol"])
+            for row in df.itertuples():
+                nm = getattr(row, "name", None)
+                etfs.setdefault(_norm(row.symbol), (ex, nm if isinstance(nm, str) else None))
     return equities, etfs
 
 
 def pending(con, retry_after_days=RETRY_MISS_DAYS):
-    """Tickers in trades that still need a sector."""
+    """Tickers that still need a sector or exchange info (misses are retried after a while)."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=retry_after_days)).isoformat()
     rows = con.execute("""
-        SELECT DISTINCT t.ticker FROM trades t LEFT JOIN ticker_sector ts USING (ticker)
-        WHERE t.ticker <> '' AND (ts.ticker IS NULL OR (ts.source = 'fd-miss' AND ts.updated_at < ?))
-        ORDER BY t.ticker""", (cutoff,)).fetchall()
+        SELECT DISTINCT t.ticker FROM trades t
+        LEFT JOIN ticker_sector ts USING (ticker) LEFT JOIN ticker_info ti USING (ticker)
+        WHERE t.ticker <> '' AND (ts.ticker IS NULL OR (ts.source = 'fd-miss' AND ts.updated_at < ?)
+                                  OR ti.ticker IS NULL OR (ti.kind IS NULL AND ti.updated_at < ?))
+        ORDER BY t.ticker""", (cutoff, cutoff)).fetchall()
     return [r[0] for r in rows]
+
+
+def _save_info(con, ticker, kind, code, name):
+    con.execute(
+        "INSERT INTO ticker_info(ticker, name, kind, exchange_code, exchange, updated_at) VALUES (?,?,?,?,?,?) "
+        "ON CONFLICT(ticker) DO UPDATE SET name=excluded.name, kind=excluded.kind, exchange_code=excluded.exchange_code, "
+        "exchange=excluded.exchange, updated_at=excluded.updated_at",
+        (ticker, name, kind, code, EXCHANGE_NAMES.get(code), datetime.now(timezone.utc).isoformat()))
 
 
 def _save(con, ticker, sector, source, industry=None):
@@ -138,6 +156,16 @@ def enrich(con, fetch=http_get, limit=None):
         for ticker in todo:
             key = _norm(ticker)
             hit = equities.get(key)
+            row = con.execute("SELECT source FROM ticker_sector WHERE ticker = ?", (ticker,)).fetchone()
+            sector_open = row is None or row[0] == "fd-miss"      # never overwrite default/override/classified rows
+            if hit:
+                _save_info(con, ticker, "equity", hit[2], hit[3])
+            elif key in etfs:
+                _save_info(con, ticker, "etf", *etfs[key])
+            else:
+                _save_info(con, ticker, None, None, None)
+            if not sector_open:
+                continue
             if hit and hit[0]:
                 _save(con, ticker, hit[0], "financedatabase", hit[1])
                 tally["classified"] += 1

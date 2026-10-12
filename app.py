@@ -6,8 +6,10 @@ import os
 import shutil
 import urllib.request
 
+import pandas as pd
 import streamlit as st
 
+import brokers
 import db
 
 # The nightly GitHub Action publishes the database to the `data` branch; the app fetches it from there.
@@ -32,18 +34,37 @@ if not db.DB_PATH.exists():  # first start on a fresh host: fetch the published 
         st.stop()
 
 
-con = db.connect()  # a fresh connection per run: cheap for SQLite, and never stale after a data refresh
+con = db.connect()
+con.executescript(db.SCHEMA)  # a database published before newer tables existed still works
+# a fresh connection per run: cheap for SQLite, and never stale after a data refresh
+
+
+RATE, RATE_DATE = db.usd_per_eur(con)      # USD per 1 EUR (ECB reference rate)
+CURRENCY = "USD"                           # set from the sidebar below
+
+
+def conv(x):
+    """USD -> the selected display currency."""
+    return x / RATE if CURRENCY == "EUR" and RATE else x
+
+
+def sym():
+    return "€" if CURRENCY == "EUR" and RATE else "$"
 
 
 def usd(n):
-    return f"${int(n):,}" if n == n and n is not None else "n/a"
+    """Format a USD amount in the selected currency (name kept: it is called from many places)."""
+    return f"{sym()}{int(conv(n)):,}" if n == n and n is not None else "n/a"
 
 
 LABELS = {"est_volume": st.column_config.NumberColumn("Volume"),
           "amount_est": st.column_config.NumberColumn("Est. amount"),
           "amount_min": st.column_config.NumberColumn("Min"),
-          "amount_max": st.column_config.NumberColumn("Max")}
+          "amount_max": st.column_config.NumberColumn("Max"),
+          "price": st.column_config.NumberColumn("Last close"),
+          "exchange": "Exchange"}
 MONEY_COLS = ("est_volume", "amount_est", "amount_min", "amount_max")
+PRICE_COLS = ("price",)
 
 
 def show(df):
@@ -51,7 +72,11 @@ def show(df):
     df = df.copy()
     if "title" in df:
         df["title"] = df["title"].fillna("")
-    fmt = {c: "${:,.0f}" for c in MONEY_COLS if c in df.columns}
+    for c in MONEY_COLS + PRICE_COLS:
+        if c in df.columns:
+            df[c] = df[c].map(lambda v: conv(v) if v == v and v is not None else v)   # stays numeric: sorting still works
+    fmt = {c: sym() + "{:,.0f}" for c in MONEY_COLS if c in df.columns}
+    fmt.update({c: sym() + "{:,.2f}" for c in PRICE_COLS if c in df.columns})
     st.dataframe(df.style.format(fmt, na_rep="") if fmt else df,
                  hide_index=True, column_config=LABELS, use_container_width=True)
 
@@ -94,6 +119,17 @@ basis = st.sidebar.radio(
          "the filed minimum is a conservative lower bound.")
 db.set_basis("min" if basis == "Filed minimum" else "mid")
 vol_label = "Volume (filed minimum)" if basis == "Filed minimum" else "Est. volume (midpoint)"
+CURRENCY = st.sidebar.radio(
+    "Currency", ["USD", "EUR"] if RATE else ["USD"],
+    help="Filings and prices are in US dollars. EUR uses the latest ECB reference rate for ALL amounts, "
+         "including past trades (not the rate on the trade date).")
+if RATE:
+    st.sidebar.caption(f"ECB rate: €1 = ${RATE:.4f} ({RATE_DATE})")
+else:
+    st.sidebar.caption("No EUR rate stored yet; it is fetched by the nightly update.")
+have, total_t, newest = db.price_freshness(con)
+if newest:
+    st.sidebar.caption(f"Prices: end-of-day closes, newest {newest}; {have:,} of {total_t:,} tickers have one.")
 if st.sidebar.button("Refresh data from GitHub"):
     try:
         download_db()
@@ -169,8 +205,39 @@ else:
         st.info("No trades loaded yet.")
         st.stop()
     t = st.selectbox("Ticker", tickers)
+    prof = db.ticker_profile(con, t)
     df = db.ticker_summary(con, t)
+    st.subheader(f"{t}" + (f" - {prof['name']}" if prof["name"] else ""))
+    a, b, c, d = st.columns(4)
+    if prof["price"] is not None:
+        a.metric("Last close", f"${prof['price']:,.2f}",
+                 delta=f"{100 * (prof['price'] / prof['prev_close'] - 1):+.1f}% on the day" if prof["prev_close"] else None)
+        b.metric("Last close (EUR)", f"€{prof['price'] / RATE:,.2f}" if RATE else "n/a",
+                 help="USD close converted at the latest ECB rate." if RATE else "No EUR rate stored yet.")
+    else:
+        a.metric("Last close", "n/a", help="No price found for this ticker (delisted, renamed, not a plain stock, or not fetched yet).")
+        b.metric("Last close (EUR)", "n/a")
+    c.metric("Exchange", prof["exchange"] or "unknown")
+    d.metric("Type", {"equity": "Stock", "etf": "ETF / fund"}.get(prof["kind"], "unknown"))
+    if prof["as_of"]:
+        st.caption(f"Price is the end-of-day close on {prof['as_of']}, refreshed nightly; it is not a live quote. "
+                   "Trades below were disclosed up to 45 days after they happened.")
     a, b = st.columns(2)
     a.metric("Trades", len(df))
     b.metric(vol_label, usd(db.volume_of(df)))
     show(df)
+
+    st.subheader("Where can I buy it from the Netherlands?")
+    verdict, per = brokers.availability(prof["kind"], prof["exchange_code"])
+    st.write(verdict)
+    if prof["kind"] == "etf":
+        st.info(brokers.ETF_NOTE)
+    bt = pd.DataFrame([{"Broker": x["name"], "Can I buy it?": per[x["name"]], "Site": x["url"], "Notes": x["note"]}
+                       for x in brokers.BROKERS])
+    st.dataframe(bt, hide_index=True, use_container_width=True,
+                 column_config={"Site": st.column_config.LinkColumn("Site", display_text="open"),
+                                "Notes": st.column_config.TextColumn("Notes", width="large")})
+    st.caption(f"Compiled by hand, last reviewed {brokers.REVIEWED}: broker offerings and fees change, so confirm on the "
+               "broker's site. Pick a broker supervised in the EU (check the AFM register). Dutch residents should also file a "
+               "W-8BEN with their broker so US dividends are withheld at 15% instead of 30%. This is information, not "
+               "investment advice; because of the filing delay, a politician's trade is old news by the time it is public.")

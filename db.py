@@ -67,6 +67,28 @@ CREATE TABLE IF NOT EXISTS ticker_sector (
     source     TEXT DEFAULT 'default',        -- default | override | financedatabase | fd-etf | fd-miss
     updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS ticker_info (
+    ticker        TEXT PRIMARY KEY,
+    name          TEXT,
+    kind          TEXT,                       -- equity | etf | NULL when the classification source doesn't know it
+    exchange_code TEXT,                       -- Yahoo-style venue code: NMS, NYQ, ASE, PCX, BTS, PNK
+    exchange      TEXT,                       -- display name: Nasdaq, NYSE, ...
+    updated_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS ticker_price (
+    ticker     TEXT PRIMARY KEY,
+    price      REAL,                          -- last close, USD
+    prev_close REAL,
+    as_of      TEXT,                          -- market date of the close
+    fetched_at TEXT,
+    source     TEXT
+);
+CREATE TABLE IF NOT EXISTS fx_rate (
+    pair       TEXT PRIMARY KEY,              -- 'USD_PER_EUR'
+    rate       REAL,
+    as_of      TEXT,
+    source     TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_trades_member ON trades(bioguide_id);
 CREATE INDEX IF NOT EXISTS idx_trades_ticker ON trades(ticker);
 """
@@ -244,8 +266,9 @@ def member_trades(con, bioguide_id):
     df = _df(con, """
         SELECT t.tx_date, t.disclosure_date, t.ticker, t.asset, t.tx_type, t.owner,
                t.amount_label, t.amount_min, t.amount_max, t.amount_est,
-               ts.sector
+               ts.sector, ti.exchange, tp.price
         FROM trades t LEFT JOIN ticker_sector ts USING (ticker)
+        LEFT JOIN ticker_info ti USING (ticker) LEFT JOIN ticker_price tp USING (ticker)
         WHERE t.bioguide_id = ? ORDER BY t.tx_date DESC""", (bioguide_id,))
     sectors = _member_sectors(con, bioguide_id)
     df["committee_relevant"] = df["sector"].isin(sectors)
@@ -265,10 +288,12 @@ def committee_members(con, committee_id):
 def committee_trades(con, committee_id):
     df = _df(con, """
         SELECT m.name AS member, t.tx_date, t.ticker, t.asset, t.tx_type,
-               t.amount_label, t.amount_min, t.amount_max, t.amount_est, ts.sector
+               t.amount_label, t.amount_min, t.amount_max, t.amount_est, ts.sector,
+               ti.exchange, tp.price
         FROM memberships ms JOIN members m USING (bioguide_id)
         JOIN trades t USING (bioguide_id)
         LEFT JOIN ticker_sector ts USING (ticker)
+        LEFT JOIN ticker_info ti USING (ticker) LEFT JOIN ticker_price tp USING (ticker)
         WHERE ms.committee_id = ? ORDER BY t.tx_date DESC""", (committee_id,))
     sectors = set(COMMITTEE_SECTORS.get(committee_id[:4], []))
     df["committee_relevant"] = df["sector"].isin(sectors)
@@ -295,10 +320,11 @@ def ticker_summary(con, ticker):
 
 def top_tickers(con, limit=15):
     return _df(con, f"""
-        SELECT t.ticker, COALESCE(ts.sector, 'Unmapped') AS sector,
+        SELECT t.ticker, COALESCE(ts.sector, 'Unmapped') AS sector, ti.exchange, tp.price,
                COUNT(*) AS trades, COUNT(DISTINCT t.bioguide_id) AS members,
                COALESCE(SUM({_est()}), 0) AS est_volume
         FROM trades t LEFT JOIN ticker_sector ts USING (ticker)
+        LEFT JOIN ticker_info ti USING (ticker) LEFT JOIN ticker_price tp USING (ticker)
         WHERE t.ticker IS NOT NULL AND t.ticker <> ''
         GROUP BY t.ticker ORDER BY est_volume DESC LIMIT ?""", (limit,))
 
@@ -351,3 +377,30 @@ def sector_coverage(con):
 def all_tickers(con):
     return [r[0] for r in con.execute(
         "SELECT DISTINCT ticker FROM trades WHERE ticker IS NOT NULL AND ticker <> '' ORDER BY ticker")]
+
+
+def ticker_profile(con, ticker):
+    """Name, kind, exchange and last close for one ticker (all None when unknown)."""
+    row = con.execute("""
+        SELECT ti.name, ti.kind, ti.exchange_code, ti.exchange, ts.sector,
+               tp.price, tp.prev_close, tp.as_of
+        FROM (SELECT ? AS ticker) q
+        LEFT JOIN ticker_info ti USING (ticker) LEFT JOIN ticker_sector ts USING (ticker)
+        LEFT JOIN ticker_price tp USING (ticker)""", (ticker,)).fetchone()
+    keys = ("name", "kind", "exchange_code", "exchange", "sector", "price", "prev_close", "as_of")
+    return dict(zip(keys, tuple(row)))
+
+
+def usd_per_eur(con):
+    """(rate, as_of) of the stored ECB reference rate, or (None, None)."""
+    row = con.execute("SELECT rate, as_of FROM fx_rate WHERE pair = 'USD_PER_EUR'").fetchone()
+    return (row[0], row[1]) if row else (None, None)
+
+
+def price_freshness(con):
+    """(tickers with a price, tickers in trades, newest price date)."""
+    row = con.execute("""
+        SELECT COUNT(DISTINCT tp.ticker), COUNT(DISTINCT t.ticker), MAX(tp.as_of)
+        FROM trades t LEFT JOIN ticker_price tp USING (ticker)
+        WHERE t.ticker IS NOT NULL AND t.ticker <> ''""").fetchone()
+    return tuple(row)
