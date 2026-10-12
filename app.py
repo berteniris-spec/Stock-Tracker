@@ -9,8 +9,14 @@ import urllib.request
 import pandas as pd
 import streamlit as st
 
+import importlib
+
 import brokers
 import db
+
+# Streamlit keeps imported modules alive between redeploys; reload so a new db.py/brokers.py is picked up without a reboot.
+importlib.reload(db)
+importlib.reload(brokers)
 
 # The nightly GitHub Action publishes the database to the `data` branch; the app fetches it from there.
 DB_URL = os.environ.get("DB_URL", "https://raw.githubusercontent.com/berteniris-spec/Stock-Tracker/data/congress.db")
