@@ -417,3 +417,12 @@ def price_freshness(con):
         FROM trades t LEFT JOIN ticker_price tp USING (ticker)
         WHERE t.ticker IS NOT NULL AND t.ticker <> ''""").fetchone()
     return tuple(row)
+
+
+def overview_stats(con):
+    """Headline numbers for the Overview: trades, members with trades, estimated volume, newest disclosure date."""
+    row = con.execute(f"""
+        SELECT COUNT(*), COUNT(DISTINCT t.bioguide_id), COALESCE(SUM({_est()}), 0),
+               MAX(CASE WHEN t.disclosure_date <= date('now') THEN t.disclosure_date END)
+        FROM trades t""").fetchone()
+    return {"trades": row[0], "members": row[1], "volume": row[2], "newest": row[3]}

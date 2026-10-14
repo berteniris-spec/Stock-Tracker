@@ -74,3 +74,20 @@ can't be classified this way.
   the repo is public.
 - The underlying filings are public records. Keep use non-commercial (the Clerk's terms bar commercial and
   fundraising use) and don't hammer the site: the importer rate-limits and caches.
+
+
+## Development loop
+
+Every change goes through the same cycle: **build, test, document**.
+
+1. **Build** the change on `main` (small commits).
+2. **Test** locally with `for t in tests/test_*.py; do python $t; done` (offline unit tests). Pushing triggers the
+   `CI` workflow, which also runs `tests/ui_smoke.py`: it drives the real Streamlit app headlessly through every view
+   and many members, committees and tickers, in USD and EUR, and fails on any exception.
+   `scripts/wait_ci.sh` waits for the run and prints the result.
+3. **Check live**: reload the deployed app and look at the changed views (Streamlit Cloud redeploys on push; press
+   "Refresh data from GitHub" for new data).
+4. **Document**: add an entry to `CHANGELOG.md` (what changed, how it was verified) and update this README if behaviour
+   or setup changed.
+
+The nightly `House import` workflow refreshes the data; CI never changes data.

@@ -29,6 +29,17 @@ def test_top_tickers_has_name_after_ticker():
     assert list(df.columns[:2]) == ["ticker", "name"] and df.name.iloc[0] == "Zed Corporation"
 
 
+def test_overview_stats():
+    con = db.connect(Path(tempfile.mkdtemp()) / "t.db")
+    db.init_db(con)
+    con.execute("INSERT INTO members(bioguide_id,name,chamber,state,party,source) VALUES ('X1','X','House','CA','D','congress-legislators')")
+    assert db.overview_stats(con) == {"trades": 0, "members": 0, "volume": 0, "newest": None}
+    db.insert_trade(con, "X1", "2026-01-01", "AAA", "Purchase", "$1,001 - $15,000", asset="A", disclosure_date="2026-01-20")
+    db.insert_trade(con, "X1", "2026-01-02", "BBB", "Sale", "$1,001 - $15,000", asset="B", disclosure_date="2999-01-01")  # bogus future date
+    st = db.overview_stats(con)
+    assert st["trades"] == 2 and st["members"] == 1 and st["volume"] > 0 and st["newest"] == "2026-01-20"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -72,7 +72,13 @@ LABELS = {"est_volume": st.column_config.NumberColumn("Volume"),
           "pe": st.column_config.NumberColumn("P/E", help="Trailing price/earnings (last 12 months). Blank = no positive earnings or no data."),
           "forward_pe": st.column_config.NumberColumn("Fwd P/E", help="Price / analysts' expected next-12-month earnings."),
           "peg": st.column_config.NumberColumn("PEG", help="P/E divided by expected earnings growth. Around 1 or below is often read as "
-                                               "cheap relative to growth; definitions vary by data provider.")}
+                                               "cheap relative to growth; definitions vary by data provider."),
+          # plain-language headers instead of database column names
+          "name": "Name", "member": "Member", "chamber": "Chamber", "party": "Party", "title": "Role",
+          "as_of": "As of", "tx_date": "Trade date", "disclosure_date": "Disclosed", "ticker": "Ticker",
+          "asset": "Asset", "tx_type": "Type", "owner": "Owner", "amount_label": "Amount range",
+          "sector": "Sector", "trades": "Trades", "members": "Members",
+          "committee_relevant": "Committee-relevant"}
 MONEY_COLS = ("est_volume", "amount_est", "amount_min", "amount_max")
 PRICE_COLS = ("price",)
 
@@ -118,20 +124,18 @@ st.title("Congress trades")
 if db.has_sample_data(con):
     st.warning("Sample data is loaded: the members marked *(fictional)* and their trades are invented demo rows. "
                "Run `python load_sample.py --purge` to remove them.")
-st.caption("Volume is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in the sidebar). "
-           "Filings can lag trades by up to 45 days. Committee data is a current snapshot, "
-           "not membership as of each trade date.")
-
 known, total = db.sector_coverage(con)
-if total:
-    st.caption(f"Sector is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%). Sectors come from the FinanceDatabase classification "
-               "and are approximate; the committee-relevance flag only applies where a sector is known.")
-
 paper = db.paper_filings(con)
+with st.expander("How to read this data"):
+    st.markdown(
+        "- **Volume** is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in the sidebar).\n"
+        "- **Filings lag trades** by up to 45 days, so a trade is old news by the time it is public.\n"
+        "- **Committee data** is a current snapshot, not membership as of each trade date.\n"
+        + (f"- **Sector** is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%), from the FinanceDatabase "
+           "classification; sectors are approximate and the committee-relevance flag only applies where a sector is known.\n" if total else ""))
 if not paper.empty:
-    st.info(f"**Coverage gap:** {len(paper)} paper filings from {paper['bioguide_id'].nunique()} members are not "
-            "imported (scanned forms with handwritten or ticked-box entries can't be read reliably). "
-            "A member with no trades listed here may still have traded.")
+    st.info(f"**Coverage gap:** {len(paper)} paper filings ({paper['bioguide_id'].nunique()} members) are not imported, so some "
+            "members may have traded more than shown.")
     with st.expander("Which filings are missing?"):
         st.dataframe(paper[["member", "year", "doc_id", "url"]], hide_index=True, use_container_width=True,
                      column_config={"url": st.column_config.LinkColumn("Original filing", display_text="open PDF"),
@@ -167,18 +171,24 @@ if st.sidebar.button("Refresh data from GitHub"):
         st.sidebar.error(f"Refresh failed: {e}")
 
 if page == "Overview":
+    stats = db.overview_stats(con)
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Trades", f"{stats['trades']:,}")
+    k2.metric("Members with trades", f"{stats['members']:,}")
+    k3.metric(vol_label, usd(stats["volume"]))
+    k4.metric("Newest disclosure", stats["newest"] or "n/a")
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("Most active members")
         top_members = db.members_with_trades(con).head(25)
         st.caption("Click a row to open that member.")
-        show(top_members[["name", "chamber", "party", "trades", "est_volume"]], key="ov_members",
+        show(top_members[["name", "party", "trades", "est_volume"]], key="ov_members",
              ids=top_members["bioguide_id"], goto=("Member", "member_sel"))
     with c2:
         st.subheader("Committees by trading volume")
         top_committees = db.committees_with_trading(con).head(25)
         st.caption("Click a row to open that committee.")
-        show(top_committees[["name", "members", "trades", "est_volume"]], key="ov_committees",
+        show(top_committees[["name", "trades", "est_volume"]], key="ov_committees",
              ids=top_committees["id"], goto=("Committee", "committee_sel"))
     st.subheader("Monthly estimated volume")
     mv = db.monthly_volume(con)
@@ -210,7 +220,10 @@ elif page == "Member":
     b.metric(vol_label, usd(db.volume_of(tr)))
     relevant_metric(c, tr, bool(db.member_sectors(con, bid)))
     st.subheader("Committees")
-    show(mc[["name", "title", "as_of"]])
+    if mc.empty:
+        st.info("No current committee assignments in the data for this member.")
+    else:
+        show(mc[["name", "title", "as_of"]])
     st.subheader("Trades")
     only_rel = st.checkbox("Only committee-relevant (sector heuristic)")
     show(tr[tr["committee_relevant"]] if only_rel else tr)
