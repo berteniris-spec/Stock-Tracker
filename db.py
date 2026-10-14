@@ -330,7 +330,7 @@ def ticker_summary(con, ticker):
 
 def top_tickers(con, limit=15):
     return _df(con, f"""
-        SELECT t.ticker, COALESCE(ts.sector, 'Unmapped') AS sector, ti.exchange, tp.price, tv.pe, tv.forward_pe, tv.peg,
+        SELECT t.ticker, ti.name, COALESCE(ts.sector, 'Unmapped') AS sector, ti.exchange, tp.price, tv.pe, tv.forward_pe, tv.peg,
                COUNT(*) AS trades, COUNT(DISTINCT t.bioguide_id) AS members,
                COALESCE(SUM({_est()}), 0) AS est_volume
         FROM trades t LEFT JOIN ticker_sector ts USING (ticker)

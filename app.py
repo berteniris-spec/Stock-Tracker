@@ -77,8 +77,12 @@ MONEY_COLS = ("est_volume", "amount_est", "amount_min", "amount_max")
 PRICE_COLS = ("price",)
 
 
-def show(df):
-    """Table with $ and thousands separators; the underlying numbers stay numeric so sorting works."""
+def show(df, key=None, ids=None, goto=None):
+    """Table with $ and thousands separators; the underlying numbers stay numeric so sorting works.
+
+    With key/ids/goto the rows are clickable: selecting a row jumps to view `goto` with that row's id
+    (`ids` is aligned with `df`'s rows; `goto` is (view name, session-state key of that view's selectbox)).
+    """
     df = df.copy()
     if "title" in df:
         df["title"] = df["title"].fillna("")
@@ -89,8 +93,14 @@ def show(df):
     fmt.update({c: sym() + "{:,.2f}" for c in PRICE_COLS if c in df.columns})
     fmt.update({c: "{:,.1f}" for c in ("pe", "forward_pe") if c in df.columns})
     fmt.update({c: "{:,.2f}" for c in ("peg",) if c in df.columns})
-    st.dataframe(df.style.format(fmt, na_rep="") if fmt else df,
-                 hide_index=True, column_config=LABELS, use_container_width=True)
+    kwargs = dict(on_select="rerun", selection_mode="single-row", key=key) if key else {}
+    event = st.dataframe(df.style.format(fmt, na_rep="") if fmt else df,
+                         hide_index=True, column_config=LABELS, use_container_width=True, **kwargs)
+    if key and ids is not None:
+        rows = event.selection.rows
+        if rows:
+            st.session_state["_goto"] = (goto[0], goto[1], list(ids)[rows[0]])
+            st.rerun()
 
 
 def relevant_metric(col, df, sectors_known):
@@ -124,7 +134,11 @@ if not paper.empty:
                      column_config={"url": st.column_config.LinkColumn("Original filing", display_text="open PDF"),
                                     "doc_id": "Filing ID", "year": "Year", "member": "Member"})
 
-page = st.sidebar.radio("View", ["Overview", "Member", "Committee", "Ticker"])
+# Click-through from a table row: set the target view and its selectbox BEFORE those widgets are created.
+_goto = st.session_state.pop("_goto", None)
+if _goto:
+    st.session_state["page"], st.session_state[_goto[1]] = _goto[0], _goto[2]
+page = st.sidebar.radio("View", ["Overview", "Member", "Committee", "Ticker"], key="page")
 basis = st.sidebar.radio(
     "Volume basis", ["Midpoint estimate", "Filed minimum"],
     help="Filings give ranges, some very wide ($5M-$25M). The midpoint can overstate a trade; "
@@ -153,16 +167,24 @@ if page == "Overview":
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("Most active members")
-        show(db.members_with_trades(con)[["name", "chamber", "party", "trades", "est_volume"]].head(25))
+        top_members = db.members_with_trades(con).head(25)
+        st.caption("Click a row to open that member.")
+        show(top_members[["name", "chamber", "party", "trades", "est_volume"]], key="ov_members",
+             ids=top_members["bioguide_id"], goto=("Member", "member_sel"))
     with c2:
         st.subheader("Committees by trading volume")
-        show(db.committees_with_trading(con)[["name", "members", "trades", "est_volume"]].head(25))
+        top_committees = db.committees_with_trading(con).head(25)
+        st.caption("Click a row to open that committee.")
+        show(top_committees[["name", "members", "trades", "est_volume"]], key="ov_committees",
+             ids=top_committees["id"], goto=("Committee", "committee_sel"))
     st.subheader("Monthly estimated volume")
     mv = db.monthly_volume(con)
     if not mv.empty:
         st.bar_chart(mv.pivot(index="month", columns="tx_type", values="est_volume").fillna(0))
     st.subheader("Top tickers")
-    show(db.top_tickers(con, 20))
+    top_t = db.top_tickers(con, 20)
+    st.caption("Click a row to open that ticker.")
+    show(top_t, key="ov_tickers", ids=top_t["ticker"], goto=("Ticker", "ticker_sel"))
 
 elif page == "Member":
     members = db.members_with_trades(con)
@@ -173,7 +195,7 @@ elif page == "Member":
     labels = {r.bioguide_id: f"{r.name} ({r.chamber}, {r.state or ''})" for r in members.itertuples()}
     labels.update({r.bioguide_id: f"{r.name} ({r.chamber}, {r.state or ''}) - paper filings only"
                    for r in only_paper.itertuples()})
-    bid = st.selectbox("Member", list(labels), format_func=labels.get)
+    bid = st.selectbox("Member", list(labels), format_func=labels.get, key="member_sel")
     mc = db.member_committees(con, bid)
     tr = db.member_trades(con, bid)
     mp = db.paper_filings(con, bid)
@@ -196,7 +218,7 @@ elif page == "Committee":
         st.info("No trades loaded yet.")
         st.stop()
     labels = dict(zip(ct["id"], ct["name"]))
-    cid = st.selectbox("Committee", list(labels), format_func=labels.get)
+    cid = st.selectbox("Committee", list(labels), format_func=labels.get, key="committee_sel")
     cm = db.committee_members(con, cid)
     tr = db.committee_trades(con, cid)
     a, b, c = st.columns(3)
@@ -216,7 +238,7 @@ else:
     if not tickers:
         st.info("No trades loaded yet.")
         st.stop()
-    t = st.selectbox("Ticker", tickers)
+    t = st.selectbox("Ticker", tickers, key="ticker_sel")
     prof = db.ticker_profile(con, t)
     df = db.ticker_summary(con, t)
     st.subheader(f"{t}" + (f" - {prof['name']}" if prof["name"] else ""))
