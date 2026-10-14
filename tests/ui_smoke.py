@@ -73,6 +73,15 @@ def main():
                 radio.set_value("EUR").run()
                 check(at, f"{page} in EUR")
 
+    # shared links restore the view; a stale id falls back instead of crashing
+    for view, ident in (("Ticker", tickers[0]), ("Member", members[0]), ("Committee", committees[0]),
+                        ("Ticker", "NOT-A-TICKER"), ("Member", "ZZZZ"), ("Bogus", "x")):
+        at = AppTest.from_file(APP, default_timeout=90)
+        at.query_params["view"] = view
+        at.query_params["id"] = ident
+        at.run()
+        check(at, f"shared link view={view} id={ident}")
+
     print(f"UI smoke finished: {len(failures)} failure(s)")
     sys.exit(1 if failures else 0)
 

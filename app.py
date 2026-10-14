@@ -6,6 +6,7 @@ import os
 import shutil
 import urllib.request
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -61,6 +62,18 @@ def sym():
 def usd(n):
     """Format a USD amount in the selected currency (name kept: it is called from many places)."""
     return f"{sym()}{int(conv(n)):,}" if n == n and n is not None else "n/a"
+
+
+def short(n):
+    """Compact money for headline numbers: $102M, $1.5B, €850K (exact figures stay in the tables)."""
+    if n != n or n is None:
+        return "n/a"
+    v = conv(n)
+    for div, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(v) >= div:
+            x = v / div
+            return f"{sym()}{x:.1f}{suffix}" if x < 100 else f"{sym()}{x:.0f}{suffix}"
+    return f"{sym()}{v:,.0f}"
 
 
 LABELS = {"est_volume": st.column_config.NumberColumn("Volume"),
@@ -141,11 +154,30 @@ if not paper.empty:
                      column_config={"url": st.column_config.LinkColumn("Original filing", display_text="open PDF"),
                                     "doc_id": "Filing ID", "year": "Year", "member": "Member"})
 
+VIEWS = ["Overview", "Member", "Committee", "Ticker"]
+SELECT_KEYS = {"Member": "member_sel", "Committee": "committee_sel", "Ticker": "ticker_sel"}
+if "page" not in st.session_state:        # first load of this session: restore the view from a shared link
+    qp = st.query_params
+    if qp.get("view") in VIEWS:
+        st.session_state["page"] = qp["view"]
+        if qp.get("view") in SELECT_KEYS and qp.get("id"):
+            st.session_state[SELECT_KEYS[qp["view"]]] = qp["id"]
+
+
+def sync_url(view, selected=None):
+    """Mirror the current view (and selected item) into the URL so it can be bookmarked or shared."""
+    params = {"view": view}
+    if selected:
+        params["id"] = str(selected)
+    if dict(st.query_params) != params:
+        st.query_params.from_dict(params)
+
+
 # Click-through from a table row: set the target view and its selectbox BEFORE those widgets are created.
 _goto = st.session_state.pop("_goto", None)
 if _goto:
     st.session_state["page"], st.session_state[_goto[1]] = _goto[0], _goto[2]
-page = st.sidebar.radio("View", ["Overview", "Member", "Committee", "Ticker"], key="page")
+page = st.sidebar.radio("View", VIEWS, key="page")
 basis = st.sidebar.radio(
     "Volume basis", ["Midpoint estimate", "Filed minimum"],
     help="Filings give ranges, some very wide ($5M-$25M). The midpoint can overstate a trade; "
@@ -171,32 +203,52 @@ if st.sidebar.button("Refresh data from GitHub"):
         st.sidebar.error(f"Refresh failed: {e}")
 
 if page == "Overview":
+    sync_url("Overview")
     stats = db.overview_stats(con)
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Trades", f"{stats['trades']:,}")
     k2.metric("Members with trades", f"{stats['members']:,}")
-    k3.metric(vol_label, usd(stats["volume"]))
+    k3.metric(vol_label, short(stats["volume"]), help=f"Exact: {usd(stats['volume'])}")
     k4.metric("Newest disclosure", stats["newest"] or "n/a")
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("Most active members")
         top_members = db.members_with_trades(con).head(25)
-        st.caption("Click a row to open that member.")
+        st.caption("Tick the box at the start of a row to open that member.")
         show(top_members[["name", "party", "trades", "est_volume"]], key="ov_members",
              ids=top_members["bioguide_id"], goto=("Member", "member_sel"))
     with c2:
         st.subheader("Committees by trading volume")
         top_committees = db.committees_with_trading(con).head(25)
-        st.caption("Click a row to open that committee.")
+        st.caption("Tick the box at the start of a row to open that committee.")
         show(top_committees[["name", "trades", "est_volume"]], key="ov_committees",
              ids=top_committees["id"], goto=("Committee", "committee_sel"))
     st.subheader("Monthly estimated volume")
     mv = db.monthly_volume(con)
     if not mv.empty:
-        st.bar_chart(mv.pivot(index="month", columns="tx_type", values="est_volume").fillna(0))
+        mv = mv.copy()
+        mv["est_volume"] = mv["est_volume"].map(conv)
+        cur = "EUR" if CURRENCY == "EUR" and RATE else "USD"
+        types = ["Purchase", "Sale", "Sale (Partial)", "Exchange"]
+        palette = ["#0072B2", "#D55E00", "#E69F00", "#7F7F7F"]      # colour-blind-safe (Okabe-Ito) hues
+        chart = (alt.Chart(mv, title=f"Estimated trade volume per month ({cur}, by trade date)")
+                 .mark_bar()
+                 .encode(x=alt.X("month:O", title="Month", axis=alt.Axis(labelAngle=-45, labelOverlap="parity")),
+                         y=alt.Y("est_volume:Q", title=f"Estimated volume ({cur})", axis=alt.Axis(format="~s")),
+                         color=alt.Color("tx_type:N", title="Type", scale=alt.Scale(domain=types, range=palette)),
+                         order=alt.Order("tx_type:N"),
+                         tooltip=[alt.Tooltip("month:O", title="Month"), alt.Tooltip("tx_type:N", title="Type"),
+                                  alt.Tooltip("est_volume:Q", title=f"Volume ({cur})", format=",.0f")])
+                 .properties(height=320))
+        st.altair_chart(chart, use_container_width=True)
+        with st.expander("Show the chart data as a table"):
+            table = (mv.pivot(index="month", columns="tx_type", values="est_volume").fillna(0)
+                     .sort_index(ascending=False).reset_index().rename(columns={"month": "Month"}))
+            st.dataframe(table.style.format({c: sym() + "{:,.0f}" for c in table.columns if c != "Month"}),
+                         hide_index=True, use_container_width=True)
     st.subheader("Top tickers")
     top_t = db.top_tickers(con, 20)
-    st.caption("Click a row to open that ticker.")
+    st.caption("Tick the box at the start of a row to open that ticker.")
     show(top_t, key="ov_tickers", ids=top_t["ticker"], goto=("Ticker", "ticker_sel"))
 
 elif page == "Member":
@@ -208,7 +260,10 @@ elif page == "Member":
     labels = {r.bioguide_id: f"{r.name} ({r.chamber}, {r.state or ''})" for r in members.itertuples()}
     labels.update({r.bioguide_id: f"{r.name} ({r.chamber}, {r.state or ''}) - paper filings only"
                    for r in only_paper.itertuples()})
+    if st.session_state.get("member_sel") not in labels:      # e.g. a stale id from a shared link
+        st.session_state.pop("member_sel", None)
     bid = st.selectbox("Member", list(labels), format_func=labels.get, key="member_sel")
+    sync_url("Member", bid)
     mc = db.member_committees(con, bid)
     tr = db.member_trades(con, bid)
     mp = db.paper_filings(con, bid)
@@ -234,7 +289,10 @@ elif page == "Committee":
         st.info("No trades loaded yet.")
         st.stop()
     labels = dict(zip(ct["id"], ct["name"]))
+    if st.session_state.get("committee_sel") not in labels:
+        st.session_state.pop("committee_sel", None)
     cid = st.selectbox("Committee", list(labels), format_func=labels.get, key="committee_sel")
+    sync_url("Committee", cid)
     cm = db.committee_members(con, cid)
     tr = db.committee_trades(con, cid)
     a, b, c = st.columns(3)
@@ -254,7 +312,10 @@ else:
     if not tickers:
         st.info("No trades loaded yet.")
         st.stop()
+    if st.session_state.get("ticker_sel") not in tickers:
+        st.session_state.pop("ticker_sel", None)
     t = st.selectbox("Ticker", tickers, key="ticker_sel")
+    sync_url("Ticker", t)
     prof = db.ticker_profile(con, t)
     df = db.ticker_summary(con, t)
     st.subheader(f"{t}" + (f" - {prof['name']}" if prof["name"] else ""))

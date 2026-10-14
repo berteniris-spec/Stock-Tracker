@@ -3,6 +3,17 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## UX round 2: navigation and charts
+- Shareable links: the URL now carries the view and the selected member / committee / ticker (`?view=Ticker&id=NVDA`);
+  opening such a link restores that page, and an unknown id falls back safely.
+- Monthly volume chart rebuilt: title, axis labels with units, compact axis numbers ($50M), colour-blind-safe colours,
+  tooltips, and a "show as a table" alternative. Follows the USD/EUR switch.
+- Headline volume shown compactly ($102M) with the exact figure in its tooltip.
+- Clearer "tick the box to open" hint on clickable tables.
+- Not done: moving the View switch from the sidebar to top tabs (Streamlit can't select a tab from code, which the row
+  click-through needs).
+- Verified: unit tests, UI smoke test (now including shared links), live check.
+
 ## UX round 1: readability
 - Overview: headline numbers strip (trades, members, volume, newest disclosure); the two overview tables show only the key
   columns so nothing is cut off; explanatory text moved into a "How to read this data" expander; one-line coverage notice.
