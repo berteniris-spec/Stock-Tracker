@@ -12,15 +12,11 @@ import streamlit as st
 import importlib
 
 import brokers
-import consent
 import db
 
 # Streamlit keeps imported modules alive between redeploys; reload so a new db.py/brokers.py is picked up without a reboot.
 importlib.reload(db)
 importlib.reload(brokers)
-importlib.reload(consent)
-
-CONTENTSQUARE_TAG_ID = "506730812ef03"
 
 # The nightly GitHub Action publishes the database to the `data` branch; the app fetches it from there.
 DB_URL = os.environ.get("DB_URL", "https://raw.githubusercontent.com/berteniris-spec/Stock-Tracker/data/congress.db")
@@ -34,7 +30,6 @@ def download_db(url=DB_URL):
 
 
 st.set_page_config(page_title="Congress Trades", layout="wide")
-consent.render_consent_banner(CONTENTSQUARE_TAG_ID)   # the analytics tag loads only after the visitor accepts
 
 if not db.DB_PATH.exists():  # first start on a fresh host: fetch the published database
     try:
