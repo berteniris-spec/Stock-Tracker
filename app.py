@@ -86,6 +86,9 @@ def show(df, key=None, ids=None, goto=None):
     df = df.copy()
     if "title" in df:
         df["title"] = df["title"].fillna("")
+    for c in MONEY_COLS + PRICE_COLS + ("pe", "forward_pe", "peg"):
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")      # all-missing columns arrive as None: show them blank, not "None"
     for c in MONEY_COLS + PRICE_COLS:
         if c in df.columns:
             df[c] = df[c].map(lambda v: conv(v) if v == v and v is not None else v)   # stays numeric: sorting still works
