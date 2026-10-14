@@ -361,8 +361,9 @@ def paper_filings(con, bioguide_id=None):
         df = _df(con, sql + " ORDER BY m.name, f.year DESC, f.doc_id", params)
     except Exception:                      # older database without a filings table
         return pd.DataFrame(columns=cols)
-    df["url"] = ("https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/"
-                 + df["year"].astype(str) + "/" + df["doc_id"] + ".pdf")
+    base = "https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/"
+    # built row by row: vectorised string concatenation fails on empty frames with pandas 3 / pyarrow strings
+    df["url"] = [f"{base}{y}/{d}.pdf" for y, d in zip(df["year"], df["doc_id"])]
     return df[cols]
 
 
