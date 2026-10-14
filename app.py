@@ -96,12 +96,13 @@ MONEY_COLS = ("est_volume", "amount_est", "amount_min", "amount_max")
 PRICE_COLS = ("price",)
 
 
-def show(df, key=None, ids=None, goto=None):
+def show(df, key=None, ids=None, goto=None, download=None):
     """Table with $ and thousands separators; the underlying numbers stay numeric so sorting works.
 
     With key/ids/goto the rows are clickable: selecting a row jumps to view `goto` with that row's id
     (`ids` is aligned with `df`'s rows; `goto` is (view name, session-state key of that view's selectbox)).
     """
+    raw = df.copy()
     df = df.copy()
     if "title" in df:
         df["title"] = df["title"].fillna("")
@@ -118,6 +119,9 @@ def show(df, key=None, ids=None, goto=None):
     kwargs = dict(on_select="rerun", selection_mode="single-row", key=key) if key else {}
     event = st.dataframe(df.style.format(fmt, na_rep="") if fmt else df,
                          hide_index=True, column_config=LABELS, use_container_width=True, **kwargs)
+    if download:       # a plain-file alternative to the canvas grid (works with screen readers and spreadsheets)
+        st.download_button("Download as CSV (amounts in USD)", raw.to_csv(index=False).encode("utf-8"), file_name=f"{download}.csv",
+                           mime="text/csv", key=f"dl_{download}")
     if key and ids is not None:
         rows = event.selection.rows
         if rows:
@@ -133,6 +137,15 @@ def relevant_metric(col, df, sectors_known):
                    "jurisdiction is broad or procedural, so the heuristic doesn't apply.")
 
 
+st.markdown("""
+<style>
+/* captions: higher contrast and a slightly larger size than Streamlit's default light grey */
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(31,36,48,.88) !important; font-size: .92rem !important; }
+@media (prefers-color-scheme: dark) {
+  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(240,242,246,.9) !important; }
+}
+</style>
+""", unsafe_allow_html=True)
 st.title("Congress trades")
 if db.has_sample_data(con):
     st.warning("Sample data is loaded: the members marked *(fictional)* and their trades are invented demo rows. "
@@ -150,9 +163,8 @@ if not paper.empty:
     st.info(f"**Coverage gap:** {len(paper)} paper filings ({paper['bioguide_id'].nunique()} members) are not imported, so some "
             "members may have traded more than shown.")
     with st.expander("Which filings are missing?"):
-        st.dataframe(paper[["member", "year", "doc_id", "url"]], hide_index=True, use_container_width=True,
-                     column_config={"url": st.column_config.LinkColumn("Original filing", display_text="open PDF"),
-                                    "doc_id": "Filing ID", "year": "Year", "member": "Member"})
+        rows = "\n".join(f"| {r.member} | {r.year} | [Open filing {r.doc_id} (PDF)]({r.url}) |" for r in paper.itertuples())
+        st.markdown("| Member | Year | Filing |\n|---|---|---|\n" + rows)
 
 VIEWS = ["Overview", "Member", "Committee", "Ticker"]
 SELECT_KEYS = {"Member": "member_sel", "Committee": "committee_sel", "Ticker": "ticker_sel"}
@@ -249,7 +261,7 @@ if page == "Overview":
     st.subheader("Top tickers")
     top_t = db.top_tickers(con, 20)
     st.caption("Tick the box at the start of a row to open that ticker.")
-    show(top_t, key="ov_tickers", ids=top_t["ticker"], goto=("Ticker", "ticker_sel"))
+    show(top_t, key="ov_tickers", ids=top_t["ticker"], goto=("Ticker", "ticker_sel"), download="top_tickers")
 
 elif page == "Member":
     members = db.members_with_trades(con)
@@ -281,7 +293,7 @@ elif page == "Member":
         show(mc[["name", "title", "as_of"]])
     st.subheader("Trades")
     only_rel = st.checkbox("Only committee-relevant (sector heuristic)")
-    show(tr[tr["committee_relevant"]] if only_rel else tr)
+    show(tr[tr["committee_relevant"]] if only_rel else tr, download=f"trades_{bid}")
 
 elif page == "Committee":
     ct = db.committees_with_trading(con)
@@ -305,7 +317,7 @@ elif page == "Committee":
         cm = cm[cm["trades"] > 0]
     show(cm[["name", "chamber", "party", "title", "trades", "est_volume"]])
     st.subheader("Trades by members of this committee")
-    show(tr)
+    show(tr, download=f"committee_{cid}_trades")
 
 else:
     tickers = db.all_tickers(con)
@@ -348,18 +360,15 @@ else:
     a, b = st.columns(2)
     a.metric("Trades", len(df))
     b.metric(vol_label, usd(db.volume_of(df)))
-    show(df)
+    show(df, download=f"ticker_{t}_trades")
 
     st.subheader("Where can I buy it from the Netherlands?")
     verdict, per = brokers.availability(prof["kind"], prof["exchange_code"])
     st.write(verdict)
     if prof["kind"] == "etf":
         st.info(brokers.ETF_NOTE)
-    bt = pd.DataFrame([{"Broker": x["name"], "Can I buy it?": per[x["name"]], "Site": x["url"], "Notes": x["note"]}
-                       for x in brokers.BROKERS])
-    st.dataframe(bt, hide_index=True, use_container_width=True,
-                 column_config={"Site": st.column_config.LinkColumn("Site", display_text="open"),
-                                "Notes": st.column_config.TextColumn("Notes", width="large")})
+    rows = "\n".join(f"| {x['name']} | {per[x['name']]} | {x['note']} | [Open {x['name']}]({x['url']}) |" for x in brokers.BROKERS)
+    st.markdown("| Broker | Can I buy it? | Notes | Link |\n|---|---|---|---|\n" + rows)   # real HTML table: screen-reader friendly
     st.caption(f"Compiled by hand, last reviewed {brokers.REVIEWED}: broker offerings and fees change, so confirm on the "
                "broker's site. Pick a broker supervised in the EU (check the AFM register). Dutch residents should also file a "
                "W-8BEN with their broker so US dividends are withheld at 15% instead of 30%. This is information, not "

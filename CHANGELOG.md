@@ -3,6 +3,16 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## UX round 3: accessibility
+- Captions: higher contrast and slightly larger text (light and dark mode).
+- "Download as CSV" under the main tables (member, committee and ticker trades, top tickers): a plain-file alternative to
+  Streamlit's canvas-drawn grids, which screen readers can't read well. Amounts in the file are in USD.
+- Broker table and the missing-paper-filings list are now real HTML tables with descriptive link text ("Open DEGIRO",
+  "Open filing 9116249 (PDF)") instead of repeated "open".
+- Chart data available as a table (round 2); colour is never the only signal (price change carries a +/- sign).
+- Known limits: Streamlit draws data grids on a canvas and gives limited control over keyboard focus after a view change;
+  a full screen-reader and keyboard audit is still to do.
+
 ## UX round 2: navigation and charts
 - Shareable links: the URL now carries the view and the selected member / committee / ticker (`?view=Ticker&id=NVDA`);
   opening such a link restores that page, and an unknown id falls back safely.
