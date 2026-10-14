@@ -19,7 +19,7 @@ Newest first. Each entry lists what changed for the user and how it was verified
 - Monthly volume chart rebuilt: title, axis labels with units, compact axis numbers ($50M), colour-blind-safe colours,
   tooltips, and a "show as a table" alternative. Follows the USD/EUR switch.
 - Headline volume shown compactly ($102M) with the exact figure in its tooltip.
-- Clearer "tick the box to open" hint on clickable tables.
+- Clearer "tick the box to open" hint on clickable tables; overview tables stacked full width and headline labels shortened so nothing is cut off.
 - Not done: moving the View switch from the sidebar to top tabs (Streamlit can't select a tab from code, which the row
   click-through needs).
 - Verified: unit tests, UI smoke test (now including shared links), live check.

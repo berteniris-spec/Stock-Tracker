@@ -219,17 +219,18 @@ if page == "Overview":
     stats = db.overview_stats(con)
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Trades", f"{stats['trades']:,}")
-    k2.metric("Members with trades", f"{stats['members']:,}")
-    k3.metric(vol_label, short(stats["volume"]), help=f"Exact: {usd(stats['volume'])}")
-    k4.metric("Newest disclosure", stats["newest"] or "n/a")
-    c1, c2 = st.columns(2)
-    with c1:
+    k2.metric("Members", f"{stats['members']:,}", help="Members of Congress with at least one imported trade.")
+    k3.metric("Est. volume" if basis != "Filed minimum" else "Min. volume", short(stats["volume"]), help=f"{vol_label}. Exact: {usd(stats['volume'])}")
+    newest_d = pd.to_datetime(stats["newest"]) if stats["newest"] else None
+    k4.metric("Latest filing", newest_d.strftime("%d %b") if newest_d is not None else "n/a",
+              help=f"Newest disclosure date in the data: {stats['newest']}" if stats["newest"] else None)
+    if True:
         st.subheader("Most active members")
         top_members = db.members_with_trades(con).head(25)
         st.caption("Tick the box at the start of a row to open that member.")
         show(top_members[["name", "party", "trades", "est_volume"]], key="ov_members",
              ids=top_members["bioguide_id"], goto=("Member", "member_sel"))
-    with c2:
+    if True:
         st.subheader("Committees by trading volume")
         top_committees = db.committees_with_trading(con).head(25)
         st.caption("Tick the box at the start of a row to open that committee.")
