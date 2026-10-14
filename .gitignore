@@ -3,3 +3,6 @@ __pycache__/
 congress.db
 *.csv
 .venv/
+
+# Contentsquare wizard (generated)
+.cs-wizard/
