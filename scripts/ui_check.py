@@ -68,10 +68,16 @@ JS = r"""
   const main = document.querySelector('[data-testid="stMain"]') || document.querySelector('[data-testid="stAppViewContainer"]');
   const pageScroll = document.documentElement.scrollWidth > vw + 1 || (main && main.scrollWidth > main.clientWidth + 1);
   const overflow = [], cut = [], small = [];
+  let widest = null, widestRight = vw + 1;
   for (const el of document.querySelectorAll('body *')) {
     if (!visible(el)) continue;
     const r = el.getBoundingClientRect();
     const inSidebar = !!el.closest('[data-testid="stSidebar"]');
+    if (r.right > widestRight && getComputedStyle(el).position !== 'fixed' &&
+        !el.closest('[data-testid="stSidebarResizeHandle"]') && !(inSidebar && sbState === 'collapsed')) {
+      widestRight = r.right;
+      widest = sel(el) + " '" + snip(el) + "' right=" + Math.round(r.right) + ' > ' + vw;
+    }
     if ((r.right > vw + 1 || r.left < -1) && !scrollable(el) && getComputedStyle(el).position !== 'fixed' &&
         !el.closest('[data-testid="stSidebarResizeHandle"]') && !(inSidebar && sbState === 'collapsed'))
       overflow.push(sel(el) + ' "' + snip(el) + '"');
@@ -88,7 +94,7 @@ JS = r"""
       small.push(sel(el) + ' "' + snip(el) + '" ' + Math.round(r.width) + 'x' + Math.round(r.height));
   }
   const uniq = (a) => [...new Set(a)];
-  return {pageScroll: !!pageScroll, overflow: uniq(overflow), cut: uniq(cut), small: uniq(small), sidebar: sbState};
+  return {pageScroll: !!pageScroll, overflow: uniq(overflow), cut: uniq(cut), small: uniq(small), sidebar: sbState, widest: widest, vw: vw};
 }
 """
 
@@ -189,6 +195,7 @@ def main():
             with sync_playwright() as pw:
                 browser = pw.chromium.launch()
                 try:
+                    warm_up(browser, base)
                     for view in VIEWS:
                         if view != "Overview" and view not in ids:
                             print(f"{view}: skipped (no id found in congress.db; use --ids)")
@@ -217,11 +224,28 @@ def main():
 
 
 SKELETON = '[data-testid="stSkeleton"], [data-testid="stStatusWidget"]'
+# The page title (st.title) is rendered on every view; a cold start can show only the empty shell.
+CONTENT = '[data-testid="stMain"] h1'
+HAS_CONTENT = f"() => {{ const e = document.querySelector('{CONTENT}'); return !!e && e.innerText.trim().length > 0; }}"
+
+
+def warm_up(browser, base):
+    """Load the app once in a throwaway context so the first real shot does not hit a cold start."""
+    ctx = browser.new_context(viewport={"width": 1280, "height": HEIGHT})
+    try:
+        page = ctx.new_page()
+        page.goto(base + "?view=Overview", wait_until="domcontentloaded")
+        wait_ready(page)
+    except Exception as e:
+        print(f"warm-up failed ({type(e).__name__}: {e}); continuing", file=sys.stderr)
+    finally:
+        ctx.close()
 
 
 def wait_ready(page):
     """Wait until the page has finished loading and its size is stable. Raises on timeout."""
     page.wait_for_selector('[data-testid="stMain"]', state="visible", timeout=30000)
+    page.wait_for_function(HAS_CONTENT, timeout=30000)
     page.wait_for_function(f"() => !document.querySelector('{SKELETON}')", timeout=30000)
     last = None
     for _ in range(40):  # about 10s
@@ -242,11 +266,11 @@ def shoot(browser, url, view, width, theme, out):
     page = ctx.new_page()
     try:
         page.goto(url, wait_until="domcontentloaded")
-        wait_ready(page)
+        wait_ready(page)  # raises PWTimeout if the content never appears
         path = out / f"{view.lower()}_{width}_{theme}.png"
         page.screenshot(path=str(path), full_page=True)
         r = page.evaluate(JS)
-        if page.query_selector(SKELETON):  # loading started again after the checks
+        if page.query_selector(SKELETON) or not page.evaluate(HAS_CONTENT):  # loading restarted or content vanished
             print(f"{view} {width} {theme}: ISSUES did not finish loading")
             return True
     except PWTimeout:
@@ -259,7 +283,10 @@ def shoot(browser, url, view, width, theme, out):
         ctx.close()
     parts = []
     if r["pageScroll"]:
-        parts.append("page-level horizontal scroll")
+        if r["widest"]:
+            parts.append(f"page-level horizontal scroll (widest: {r['widest']})")
+        else:
+            parts.append("page-level horizontal scroll (no element exceeds the viewport)")
     if r["overflow"]:
         parts.append("overflowing viewport: " + "; ".join(r["overflow"][:5]))
     if r["cut"]:
