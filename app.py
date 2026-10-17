@@ -2,6 +2,7 @@
 
 Run:  streamlit run app.py
 """
+import html
 import os
 import shutil
 import urllib.request
@@ -144,6 +145,8 @@ st.markdown("""
 @media (prefers-color-scheme: dark) {
   [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(239,236,227,.82) !important; }
 }
+/* tap targets: at least 44px tall for expander headers and link buttons */
+[data-testid="stExpander"] summary, [data-testid="stLinkButton"] a { min-height: 44px; }
 </style>
 """, unsafe_allow_html=True)
 st.title("Congress trades")
@@ -153,7 +156,10 @@ if db.has_sample_data(con):
 known, total = db.sector_coverage(con)
 paper = db.paper_filings(con)
 if not paper.empty:
-    st.caption(f"{len(paper)} paper filings not imported ({paper['bioguide_id'].nunique()} members). Details under About this data.")
+    n_members = paper["bioguide_id"].nunique()
+    gap = (f"{len(paper)} paper filing{'s' if len(paper) != 1 else ''} not imported "
+           f"({n_members} member{'s' if n_members != 1 else ''}).")
+    st.caption(f"**Coverage gap:** {gap} Details under About this data.")
 with st.expander("About this data"):
     st.markdown(
         "- **Volume** is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in the sidebar).\n"
@@ -162,8 +168,7 @@ with st.expander("About this data"):
         + (f"- **Sector** is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%), from the FinanceDatabase "
            "classification; sectors are approximate and the committee-relevance flag only applies where a sector is known.\n" if total else ""))
     if not paper.empty:
-        st.markdown(f"**Coverage gap:** {len(paper)} paper filings ({paper['bioguide_id'].nunique()} members) are not imported, so some "
-                    "members may have traded more than shown.")
+        st.markdown("Some members may have traded more than shown. Filings not imported:")
         rows = "\n".join(f"| {r.member} | {r.year} | [Open filing {r.doc_id} (PDF)]({r.url}) |" for r in paper.itertuples())
         st.markdown("| Member | Year | Filing |\n|---|---|---|\n" + rows)
 
@@ -373,6 +378,11 @@ else:
         with st.expander(f"{x['name']}: {per[x['name']]}"):
             st.write(x["note"])
             st.link_button(f"Open {x['name']}", x["url"])
+    with st.expander("Show the brokers as a table"):
+        trs = "".join(f"<tr><td>{html.escape(x['name'])}</td><td>{html.escape(per[x['name']])}</td><td>{html.escape(x['note'])}</td>"
+                      f"<td><a href=\"{html.escape(x['url'])}\">Open {html.escape(x['name'])}</a></td></tr>" for x in brokers.BROKERS)
+        st.markdown('<div style="overflow-x: auto"><table><thead><tr><th>Broker</th><th>Can I buy it?</th><th>Notes</th><th>Link</th>'
+                    f"</tr></thead><tbody>{trs}</tbody></table></div>", unsafe_allow_html=True)   # real HTML table: screen-reader friendly
     st.caption(f"Compiled by hand, last reviewed {brokers.REVIEWED}: broker offerings and fees change, so confirm on the "
                "broker's site. Pick a broker supervised in the EU (check the AFM register). Dutch residents should also file a "
                "W-8BEN with their broker so US dividends are withheld at 15% instead of 30%. This is information, not "
