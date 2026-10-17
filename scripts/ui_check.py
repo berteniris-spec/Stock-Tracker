@@ -3,8 +3,12 @@
 Usage: python scripts/ui_check.py [OUTPUT_DIR] [--ids Member=ID Committee=ID Ticker=ID]
 
 Needs the `playwright` package and a Chromium in PLAYWRIGHT_BROWSERS_PATH (default /opt/pw-browsers).
-Neither is in requirements.txt. Read-only: it never writes to congress.db.
-Exit codes: 0 no page-level horizontal overflow, 1 overflow found, 2 environment problem.
+Neither is in requirements.txt. Read-only: it never writes to congress.db. The interpreter that runs
+this script must import both playwright and streamlit (it starts the app with the same interpreter),
+and the playwright version must match the installed chromium build.
+Limit: only the default state is captured (USD, default volume basis, sidebar as rendered at load).
+EUR, the other volume basis and the open sidebar at 390 are not checked.
+Exit codes: 0 clean, 1 page-level overflow or did not finish loading, 2 environment problem.
 """
 import argparse
 import os
@@ -34,10 +38,10 @@ JS = r"""
   const sel = (el) => {
     let s = el.tagName.toLowerCase();
     const t = el.getAttribute('data-testid');
+    const role = el.getAttribute('role');
     if (t) s += '[data-testid="' + t + '"]';
+    else if (role) s += '[role="' + role + '"]';
     else if (el.id) s += '#' + el.id;
-    else if (el.className && typeof el.className === 'string')
-      s += '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.');
     return s;
   };
   const snip = (el) => (el.innerText || el.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ').slice(0, 40);
@@ -54,24 +58,37 @@ JS = r"""
     }
     return false;
   };
+  const sb = document.querySelector('[data-testid="stSidebar"]');
+  let sbState = 'collapsed';
+  if (sb) {
+    const sr = sb.getBoundingClientRect(), ae = sb.getAttribute('aria-expanded');
+    const off = sr.right <= 0 || sr.left >= vw;
+    sbState = (ae === 'false' || off || sr.width === 0) ? 'collapsed' : 'expanded';
+  }
   const main = document.querySelector('[data-testid="stMain"]') || document.querySelector('[data-testid="stAppViewContainer"]');
   const pageScroll = document.documentElement.scrollWidth > vw + 1 || (main && main.scrollWidth > main.clientWidth + 1);
   const overflow = [], cut = [], small = [];
   for (const el of document.querySelectorAll('body *')) {
     if (!visible(el)) continue;
     const r = el.getBoundingClientRect();
-    if ((r.right > vw + 1 || r.left < -1) && !scrollable(el) && getComputedStyle(el).position !== 'fixed')
+    const inSidebar = !!el.closest('[data-testid="stSidebar"]');
+    if ((r.right > vw + 1 || r.left < -1) && !scrollable(el) && getComputedStyle(el).position !== 'fixed' &&
+        !el.closest('[data-testid="stSidebarResizeHandle"]') && !(inSidebar && sbState === 'collapsed'))
       overflow.push(sel(el) + ' "' + snip(el) + '"');
+    if (r.width < 4 || r.height < 4 || el.closest('[aria-hidden="true"]') ||
+        el.closest('a[data-testid="stSkipToContent"]')) continue;
     const cs = getComputedStyle(el);
     if ((cs.overflowX === 'hidden' || cs.textOverflow === 'ellipsis') && el.scrollWidth > el.clientWidth + 1 &&
         (el.innerText || '').trim() && !el.closest('[data-testid="stDataFrame"]'))
       cut.push(sel(el) + ' "' + snip(el) + '"');
     if (el.matches('a[href], button, input, select, textarea, [role="button"], [role="tab"], [role="radio"], [role="checkbox"]') &&
+        !el.matches('input[type="radio"], input[type="checkbox"]') &&
+        !el.closest('[data-testid="stTooltipIcon"]') &&
         (r.width < 44 || r.height < 44))
       small.push(sel(el) + ' "' + snip(el) + '" ' + Math.round(r.width) + 'x' + Math.round(r.height));
   }
   const uniq = (a) => [...new Set(a)];
-  return {pageScroll: !!pageScroll, overflow: uniq(overflow), cut: uniq(cut), small: uniq(small)};
+  return {pageScroll: !!pageScroll, overflow: uniq(overflow), cut: uniq(cut), small: uniq(small), sidebar: sbState};
 }
 """
 
@@ -134,8 +151,9 @@ def main():
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        print("playwright is not installed (pip install playwright; browsers expected in "
-              f"{os.environ['PLAYWRIGHT_BROWSERS_PATH']}). Not added to requirements.txt.", file=sys.stderr)
+        print("playwright is not installed for this interpreter (pip install playwright; browsers expected in "
+              f"{os.environ['PLAYWRIGHT_BROWSERS_PATH']}). The interpreter running this script must import "
+              "both playwright and streamlit. Not added to requirements.txt.", file=sys.stderr)
         return 2
     if not DB.exists():
         print("congress.db not found; refusing to run (fetch it first).", file=sys.stderr)
@@ -185,7 +203,8 @@ def main():
                 finally:
                     browser.close()
         except Exception as e:  # missing browser, launch failure, etc.
-            print(f"Browser problem: {type(e).__name__}: {e}", file=sys.stderr)
+            print(f"Browser problem: {type(e).__name__}: {e}. Check that the playwright version matches "
+                  f"the chromium build in $PLAYWRIGHT_BROWSERS_PATH (ls it).", file=sys.stderr)
             return 2
     finally:
         proc.terminate()
@@ -197,20 +216,42 @@ def main():
     return 1 if overflow_found else 0
 
 
+SKELETON = '[data-testid="stSkeleton"], [data-testid="stStatusWidget"]'
+
+
+def wait_ready(page):
+    """Wait until the page has finished loading and its size is stable. Raises on timeout."""
+    page.wait_for_selector('[data-testid="stMain"]', state="visible", timeout=30000)
+    page.wait_for_function(f"() => !document.querySelector('{SKELETON}')", timeout=30000)
+    last = None
+    for _ in range(40):  # about 10s
+        cur = page.evaluate("() => [document.documentElement.scrollHeight, document.documentElement.scrollWidth]")
+        if cur == last:
+            break
+        last = cur
+        page.wait_for_timeout(250)
+    try:
+        page.wait_for_load_state("networkidle", timeout=5000)
+    except Exception:
+        pass
+
+
 def shoot(browser, url, view, width, theme, out):
+    from playwright.sync_api import TimeoutError as PWTimeout
     ctx = browser.new_context(viewport={"width": width, "height": HEIGHT}, color_scheme=theme)
     page = ctx.new_page()
     try:
         page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_selector('[data-testid="stAppViewContainer"]', timeout=30000)
-        try:
-            page.wait_for_selector('[data-testid="stStatusWidget"]', state="detached", timeout=30000)
-        except Exception:
-            pass
-        page.wait_for_timeout(1000)
+        wait_ready(page)
         path = out / f"{view.lower()}_{width}_{theme}.png"
         page.screenshot(path=str(path), full_page=True)
         r = page.evaluate(JS)
+        if page.query_selector(SKELETON):  # loading started again after the checks
+            print(f"{view} {width} {theme}: ISSUES did not finish loading")
+            return True
+    except PWTimeout:
+        print(f"{view} {width} {theme}: ISSUES did not finish loading")
+        return True
     except Exception as e:
         print(f"{view} {width} {theme}: ISSUES could not render ({type(e).__name__}: {e})")
         return False
@@ -224,7 +265,8 @@ def shoot(browser, url, view, width, theme, out):
     if r["cut"]:
         parts.append("suspected cut-off text: " + "; ".join(r["cut"][:5]))
     if width == 390 and r["small"]:
-        parts.append(f"advisory, {len(r['small'])} targets under 44x44: " + "; ".join(r["small"][:5]))
+        parts.append(f"advisory, sidebar={r['sidebar']}, {len(r['small'])} targets under 44x44: "
+                     + "; ".join(r["small"][:5]))
     print(f"{view} {width} {theme}: {'ISSUES ' + ' | '.join(parts) if parts else 'PASS'}  {path}")
     return bool(r["pageScroll"])
 
