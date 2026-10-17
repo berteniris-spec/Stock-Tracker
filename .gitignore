@@ -3,3 +3,5 @@ __pycache__/
 congress.db
 *.csv
 .venv/
+.claude/settings.local.json
+.claude/.cache/

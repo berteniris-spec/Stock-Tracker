@@ -3,6 +3,16 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Session hooks and CLAUDE.md
+- `.claude/settings.json` registers three Claude Code hooks (scripts in `.claude/hooks/`):
+  - `session_start.sh` (cloud sessions only): installs `requirements.txt` plus reportlab, fetches `congress.db` from the `data` branch if it is missing or older than 12 hours, and prints the top of `docs/CONTEXT.md`. It never fails the session.
+  - `guard_paths.py`: asks for confirmation before edits to `congress.db`, `.github/workflows/` and `.streamlit/config.toml`, with a best-effort check on Bash commands.
+  - `on_stop.py`: runs the unit tests when a `.py` file changed and blocks the stop (exit 2) if they fail; warns when code changed without a `CHANGELOG.md` entry.
+- Added `CLAUDE.md`, which points to `AGENTS.md` and `docs/CONTEXT.md`. `.gitignore` now ignores `.claude/settings.local.json` and `.claude/.cache/`.
+- Verified: hooks run in a throwaway copy (fresh cloud fetch; repeat run in 0.02s; failed fetch keeps the existing database; local mode silent; guard allow and ask cases; stop hook pass, fail and warning cases), unit tests, and `tests/ui_smoke.py` (0 failures).
+- Not checked: a live Claude Code session triggering the hooks, `${CLAUDE_PROJECT_DIR}` expansion in the harness, a truly fresh container install, the 120s test timeout.
+- Known limits: the Bash guard has false positives (`cp congress.db /tmp/x`, `>` inside SQL) and a false negative (Python writing the file). The stop hook runs the full unit tests (about 15s or more) whenever any `.py` file is uncommitted, and the CHANGELOG warning fires on any uncommitted code change.
+
 ## Agents and project context
 - Added `AGENTS.md` (Planner, Builder, Designer, Tester, Documenter and their hand-offs), subagent files in `.claude/agents/`, and `docs/CONTEXT.md` for resuming after a session clear.
 - Verified: documentation only; no code changed.
