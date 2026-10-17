@@ -152,17 +152,18 @@ if db.has_sample_data(con):
                "Run `python load_sample.py --purge` to remove them.")
 known, total = db.sector_coverage(con)
 paper = db.paper_filings(con)
-with st.expander("How to read this data"):
+if not paper.empty:
+    st.caption(f"{len(paper)} paper filings not imported ({paper['bioguide_id'].nunique()} members). Details under About this data.")
+with st.expander("About this data"):
     st.markdown(
         "- **Volume** is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in the sidebar).\n"
         "- **Filings lag trades** by up to 45 days, so a trade is old news by the time it is public.\n"
         "- **Committee data** is a current snapshot, not membership as of each trade date.\n"
         + (f"- **Sector** is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%), from the FinanceDatabase "
            "classification; sectors are approximate and the committee-relevance flag only applies where a sector is known.\n" if total else ""))
-if not paper.empty:
-    st.info(f"**Coverage gap:** {len(paper)} paper filings ({paper['bioguide_id'].nunique()} members) are not imported, so some "
-            "members may have traded more than shown.")
-    with st.expander("Which filings are missing?"):
+    if not paper.empty:
+        st.markdown(f"**Coverage gap:** {len(paper)} paper filings ({paper['bioguide_id'].nunique()} members) are not imported, so some "
+                    "members may have traded more than shown.")
         rows = "\n".join(f"| {r.member} | {r.year} | [Open filing {r.doc_id} (PDF)]({r.url}) |" for r in paper.itertuples())
         st.markdown("| Member | Year | Filing |\n|---|---|---|\n" + rows)
 
@@ -368,8 +369,10 @@ else:
     st.write(verdict)
     if prof["kind"] == "etf":
         st.info(brokers.ETF_NOTE)
-    rows = "\n".join(f"| {x['name']} | {per[x['name']]} | {x['note']} | [Open {x['name']}]({x['url']}) |" for x in brokers.BROKERS)
-    st.markdown("| Broker | Can I buy it? | Notes | Link |\n|---|---|---|---|\n" + rows)   # real HTML table: screen-reader friendly
+    for x in brokers.BROKERS:
+        with st.expander(f"{x['name']}: {per[x['name']]}"):
+            st.write(x["note"])
+            st.link_button(f"Open {x['name']}", x["url"])
     st.caption(f"Compiled by hand, last reviewed {brokers.REVIEWED}: broker offerings and fees change, so confirm on the "
                "broker's site. Pick a broker supervised in the EU (check the AFM register). Dutch residents should also file a "
                "W-8BEN with their broker so US dividends are withheld at 15% instead of 30%. This is information, not "
