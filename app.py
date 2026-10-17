@@ -130,12 +130,17 @@ def show(df, key=None, ids=None, goto=None, download=None):
             st.rerun()
 
 
+def esc(s):
+    """Escape dollar signs for markdown help/caption text (two $ in one string would render as LaTeX)."""
+    return s.replace("$", "\\$")
+
+
+NO_SECTORS_NOTE = ("Committee-relevant is n/a: none of these committees maps to sectors, "
+                   "so the sector heuristic does not apply.")
+
+
 def relevant_metric(col, df, sectors_known):
-    if sectors_known:
-        col.metric("Committee-relevant trades", int(df["committee_relevant"].sum()))
-    else:
-        col.metric("Committee-relevant trades", "n/a", help="No sector mapping for this committee: its "
-                   "jurisdiction is broad or procedural, so the heuristic doesn't apply.")
+    col.metric("Committee-relevant", int(df["committee_relevant"].sum()) if sectors_known else "n/a")
 
 
 st.markdown("""
@@ -154,6 +159,11 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 @media (prefers-color-scheme: dark) {
   label[data-testid="stRadioOption"]:not([data-selected="true"]) > div > div:first-child { border-color: rgba(239,236,227,.55) !important; }
   label[data-testid="stRadioOption"]:focus-within { outline-color: #8fabd4; }
+}
+/* phone: metric strips two per row (Streamlit stacks columns one per row at 640px), values sized to fit */
+@media (max-width: 640px) {
+  [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] { flex: 0 0 calc(50% - .55rem); width: calc(50% - .55rem); min-width: 0; }
+  [data-testid="stMetricValue"], [data-testid="stMetricValue"] * { font-size: clamp(1.5rem, 7vw, 2.25rem); }
 }
 /* refresh button: full width on a phone, capped on wider screens */
 .st-key-refresh, .st-key-refresh [data-testid="stButton"], .st-key-refresh button { width: 100%; }
@@ -217,7 +227,8 @@ if refresh:
     except Exception as e:
         err_slot.error(f"Refresh failed: {e}")
 db.set_basis("min" if basis == "Filed minimum" else "mid")
-vol_label = "Volume (filed minimum)" if basis == "Filed minimum" else "Est. volume (midpoint)"
+vol_label = "Min. volume" if basis == "Filed minimum" else "Est. volume"          # metric label (18 characters at most)
+vol_full = "Volume (filed minimum)" if basis == "Filed minimum" else "Est. volume (midpoint)"   # full basis name for tooltips
 
 if db.has_sample_data(con):
     st.warning("Sample data is loaded: the members marked *(fictional)* and their trades are invented demo rows. "
@@ -247,7 +258,7 @@ if page == "Overview":
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Trades", f"{stats['trades']:,}")
     k2.metric("Members", f"{stats['members']:,}", help="Members of Congress with at least one imported trade.")
-    k3.metric("Est. volume" if basis != "Filed minimum" else "Min. volume", short(stats["volume"]), help=f"{vol_label}. Exact: {usd(stats['volume'])}")
+    k3.metric(vol_label, short(stats["volume"]), help=esc(f"{vol_full}. Exact: {usd(stats['volume'])}"))
     newest_d = pd.to_datetime(stats["newest"]) if stats["newest"] else None
     k4.metric("Latest filing", newest_d.strftime("%d %b") if newest_d is not None else "n/a",
               help=f"Newest disclosure date in the data: {stats['newest']}" if stats["newest"] else None)
@@ -312,8 +323,12 @@ elif page == "Member":
                    "incomplete: " + ", ".join(f"[{r.doc_id}]({r.url})" for r in mp.itertuples()))
     a, b, c = st.columns(3)
     a.metric("Trades", len(tr))
-    b.metric(vol_label, usd(db.volume_of(tr)))
-    relevant_metric(c, tr, bool(db.member_sectors(con, bid)))
+    vol = db.volume_of(tr)
+    b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
+    sectors_known = bool(db.member_sectors(con, bid))
+    relevant_metric(c, tr, sectors_known)
+    if not sectors_known:
+        st.caption(NO_SECTORS_NOTE)
     st.subheader("Committees")
     if mc.empty:
         st.info("No current committee assignments in the data for this member.")
@@ -336,9 +351,13 @@ elif page == "Committee":
     cm = db.committee_members(con, cid)
     tr = db.committee_trades(con, cid)
     a, b, c = st.columns(3)
-    a.metric("Members with trades", int((cm["trades"] > 0).sum()))
-    b.metric(vol_label, usd(db.volume_of(tr)))
-    relevant_metric(c, tr, bool(db.committee_sectors(cid)))
+    a.metric("Members trading", int((cm["trades"] > 0).sum()))
+    vol = db.volume_of(tr)
+    b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
+    sectors_known = bool(db.committee_sectors(cid))
+    relevant_metric(c, tr, sectors_known)
+    if not sectors_known:
+        st.caption(NO_SECTORS_NOTE)
     st.subheader("Members")
     only_traders = st.checkbox("Only members with trades", value=True)
     if only_traders:
@@ -361,33 +380,34 @@ else:
     st.subheader(f"{t}" + (f" - {prof['name']}" if prof["name"] else ""))
     a, b, c, d = st.columns(4)
     if prof["price"] is not None:
-        a.metric("Last close", f"${prof['price']:,.2f}",
+        a.metric("Close (USD)", f"${prof['price']:,.2f}",
                  delta=f"{100 * (prof['price'] / prof['prev_close'] - 1):+.1f}% on the day" if prof["prev_close"] else None)
-        b.metric("Last close (EUR)", f"€{prof['price'] / RATE:,.2f}" if RATE else "n/a",
+        b.metric("Close (EUR)", f"€{prof['price'] / RATE:,.2f}" if RATE else "n/a",
                  help="USD close converted at the latest ECB rate." if RATE else "No EUR rate stored yet.")
     else:
-        a.metric("Last close", "n/a", help="No price found for this ticker (delisted, renamed, not a plain stock, or not fetched yet).")
-        b.metric("Last close (EUR)", "n/a")
+        a.metric("Close (USD)", "n/a")
+        b.metric("Close (EUR)", "n/a")
     c.metric("Exchange", prof["exchange"] or "unknown")
     d.metric("Type", {"equity": "Stock", "etf": "ETF / fund"}.get(prof["kind"], "unknown"))
-    if prof["as_of"]:
+    if not prof["as_of"]:
+        st.caption("No price found for this ticker (delisted, renamed, not a plain stock, or not fetched yet).")
+    else:
         st.caption(f"Price is the end-of-day close on {prof['as_of']}, refreshed nightly; it is not a live quote. "
                    "Trades below were disclosed up to 45 days after they happened.")
     if prof["kind"] != "etf":
         a, b, c = st.columns(3)
         na = "n/a"
-        a.metric("P/E (trailing)", f"{prof['pe']:.1f}" if prof["pe"] else na,
-                 help="Price / earnings over the last 12 months. n/a when the company has no positive earnings or Yahoo has no data.")
-        b.metric("Forward P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na,
-                 help="Price / analysts' expected earnings for the next 12 months.")
-        c.metric("PEG ratio", f"{prof['peg']:.2f}" if prof["peg"] else na,
-                 help="P/E divided by expected earnings growth. Definitions differ between data providers, so compare "
-                      "companies using the same source only. n/a when growth is unknown or negative.")
+        a.metric("P/E", f"{prof['pe']:.1f}" if prof["pe"] else na)
+        b.metric("Fwd P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na)
+        c.metric("PEG", f"{prof['peg']:.2f}" if prof["peg"] else na)
         st.caption("Ratios come from Yahoo Finance, refreshed nightly, and are shown for reference: a low or high number is not "
-                   "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies).")
+                   "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies). "
+                   "P/E is price over the last 12 months of earnings, Fwd P/E uses expected earnings for the next 12 months, "
+                   "and PEG is P/E divided by expected earnings growth; n/a means no positive earnings, no growth figure or no data.")
     a, b = st.columns(2)
     a.metric("Trades", len(df))
-    b.metric(vol_label, usd(db.volume_of(df)))
+    vol = db.volume_of(df)
+    b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
     show(df, download=f"ticker_{t}_trades")
 
     st.subheader("Where can I buy it from the Netherlands?")

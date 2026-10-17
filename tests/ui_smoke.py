@@ -25,6 +25,33 @@ def check(at, label):
         print("ok", label)
 
 
+def check_metrics(at, label):
+    """Every metric: label of 18 characters at most (two per row on a phone) and a non-empty value."""
+    if not len(at.metric):
+        failures.append(f"{label} metrics")
+        print(f"::error title=UI smoke: {label} metrics::no metrics rendered")
+    for m in at.metric:
+        if len(m.label) > 18 or not str(m.value).strip():
+            failures.append(f"{label} metric {m.label}")
+            print(f"::error title=UI smoke: {label} metric::label {m.label!r} ({len(m.label)} chars) or empty value {m.value!r}")
+    print("ok", label, "metrics:", ", ".join(f"{m.label}={m.value}" for m in at.metric))
+
+
+def check_vol_label(at, label):
+    """The volume metric carries the short basis name, the same on every view."""
+    want = "Min. volume" if at.radio(key="basis").value == "Filed minimum" else "Est. volume"
+    vols = [m for m in at.metric if m.label in ("Est. volume", "Min. volume")]
+    if not vols or any(m.label != want for m in vols):
+        failures.append(f"{label} volume label")
+        print(f"::error title=UI smoke: {label} volume label::expected {want!r}, got {[m.label for m in at.metric]}")
+    else:
+        print("ok", label, "volume label", want)
+
+
+def has_caption(at, text):
+    return any(text in str(c.value) for c in at.caption)
+
+
 def fresh():
     at = AppTest.from_file(APP, default_timeout=90)
     at.run()
@@ -44,6 +71,8 @@ def main():
 
     at = fresh()
     check(at, "Overview")
+    check_metrics(at, "Overview")
+    check_vol_label(at, "Overview")
     # no sidebar any more: the controls live in a Settings expander under the title
     if len(at.sidebar) == 0:
         print("ok no sidebar children")
@@ -60,6 +89,8 @@ def main():
         for opt in at.radio(key=key).options:
             at.radio(key=key).set_value(opt).run()
             check(at, f"Overview with {label}={opt}")
+            check_metrics(at, f"Overview with {label}={opt}")
+            check_vol_label(at, f"Overview with {label}={opt}")
 
     # settings survive a view change
     at = fresh()
@@ -81,6 +112,12 @@ def main():
         at = fresh()
         at.radio(key="page").set_value(page).run()
         check(at, f"{page} default")
+        check_metrics(at, f"{page} default")
+        check_vol_label(at, f"{page} default")
+        at.radio(key="basis").set_value("Filed minimum").run()
+        check_metrics(at, f"{page} Filed minimum")
+        check_vol_label(at, f"{page} Filed minimum")
+        at.radio(key="basis").set_value("Midpoint estimate").run()
         for item in sample:
             try:
                 at.selectbox(key=key).set_value(item).run()
@@ -93,6 +130,26 @@ def main():
         if "EUR" in at.radio(key="currency").options:
             at.radio(key="currency").set_value("EUR").run()
             check(at, f"{page} in EUR")
+
+    # members and committees with no sector mapping show the visible n/a note; mapped ones do not
+    import db
+    note = "Committee-relevant is n/a"
+    for page, key, ids, mapped in (("Member", "member_sel", members, lambda i: db.member_sectors(con, i)),
+                                   ("Committee", "committee_sel", committees, db.committee_sectors)):
+        for want_note in (True, False):
+            pick = next((i for i in ids if bool(mapped(i)) != want_note), None)
+            if pick is None:
+                print(f"note: no {page} {'without' if want_note else 'with'} a sector mapping in this data; caption not checked")
+                continue
+            at = fresh()
+            at.radio(key="page").set_value(page).run()
+            at.selectbox(key=key).set_value(pick).run()
+            rel = [m for m in at.metric if m.label == "Committee-relevant"]
+            if has_caption(at, note) != want_note or (want_note and (not rel or rel[0].value != "n/a")):
+                failures.append(f"{page} sector note {pick}")
+                print(f"::error title=UI smoke: {page} sector note::{pick}: caption shown={has_caption(at, note)}, expected {want_note}")
+            else:
+                print(f"ok {page} {pick} n/a caption {'shown' if want_note else 'absent'}")
 
     # shared links restore the view; a stale id falls back instead of crashing
     for view, ident in (("Ticker", tickers[0]), ("Member", members[0]), ("Committee", committees[0]),
