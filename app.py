@@ -141,12 +141,23 @@ def relevant_metric(col, df, sectors_known):
 st.markdown("""
 <style>
 /* captions: higher contrast and a slightly larger size than Streamlit's default light grey */
-[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(0,0,0,.78) !important; font-size: .92rem !important; }
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(0,0,0,.78) !important; font-size: .92rem !important; opacity: 1; }
 @media (prefers-color-scheme: dark) {
   [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(239,236,227,.82) !important; }
 }
 /* tap targets: at least 44px tall for expander headers and link buttons */
 [data-testid="stExpander"] summary, [data-testid="stLinkButton"] a { min-height: 44px; }
+/* radio: the unselected ring was the 20% rule colour (1.7:1); about 55% ink gives at least 3:1 */
+label[data-testid="stRadioOption"]:not([data-selected="true"]) > div > div:first-child { border-color: rgba(0,0,0,.55) !important; }
+/* radio: visible keyboard focus */
+label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; outline-offset: 2px; }
+@media (prefers-color-scheme: dark) {
+  label[data-testid="stRadioOption"]:not([data-selected="true"]) > div > div:first-child { border-color: rgba(239,236,227,.55) !important; }
+  label[data-testid="stRadioOption"]:focus-within { outline-color: #8fabd4; }
+}
+/* refresh button: full width on a phone, capped on wider screens */
+.st-key-refresh, .st-key-refresh [data-testid="stButton"], .st-key-refresh button { width: 100%; }
+@media (min-width: 641px) { .st-key-refresh button { max-width: 24rem; } }
 /* tap targets: buttons and each radio option (view switch, settings) at least 44px, wrapped rows spaced apart */
 [data-testid="stButton"] button, [data-testid="stDownloadButton"] button { min-height: 44px; }
 label[data-testid="stRadioOption"] { min-height: 44px; align-items: center; }
@@ -180,16 +191,16 @@ if _goto:
 page = st.radio("View", VIEWS, key="page", horizontal=True, label_visibility="collapsed")
 with st.expander("Settings"):
     basis = st.radio(
-        "Volume basis", ["Midpoint estimate", "Filed minimum"], key="basis", horizontal=True,
-        help="Filings give ranges, some very wide ($5M-$25M). The midpoint can overstate a trade; "
-             "the filed minimum is a conservative lower bound.")
+        "Volume basis", ["Midpoint estimate", "Filed minimum"], key="basis", horizontal=True)
+    st.caption("Filings give ranges, some very wide (\\$5M-\\$25M): the midpoint can overstate a trade; "
+               "the filed minimum is a conservative lower bound.")
     currency_opts = ["USD", "EUR"] if RATE else ["USD"]
     if st.session_state.get("currency") not in (None, *currency_opts):
         st.session_state.pop("currency")     # e.g. EUR chosen, then a refresh left no stored rate
     CURRENCY = st.radio(
-        "Currency", currency_opts, key="currency", horizontal=True,
-        help="Filings and prices are in US dollars. EUR uses the latest ECB reference rate for ALL amounts, "
-             "including past trades (not the rate on the trade date).")
+        "Currency", currency_opts, key="currency", horizontal=True)
+    st.caption("Filings and prices are in US dollars. EUR uses the latest ECB reference rate for all amounts, "
+               "including past trades.")
     if RATE:
         st.caption(f"ECB rate: €1 = ${RATE:.4f} ({RATE_DATE})")
     else:
@@ -197,7 +208,7 @@ with st.expander("Settings"):
     have, total_t, newest = db.price_freshness(con)
     if newest:
         st.caption(f"Prices: end-of-day closes, newest {newest}; {have:,} of {total_t:,} tickers have one.")
-    refresh = st.button("Refresh data from GitHub", key="refresh", use_container_width=True)
+    refresh = st.button("Refresh data from GitHub", key="refresh")
 err_slot = st.container()                    # outside the collapsed expander, so a failure is visible
 if refresh:
     try:
