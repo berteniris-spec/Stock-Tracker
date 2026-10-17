@@ -90,4 +90,9 @@ Every change goes through the same cycle: **build, test, document**.
 4. **Document**: add an entry to `CHANGELOG.md` (what changed, how it was verified) and update this README if behaviour
    or setup changed.
 
+For Claude Code, `CLAUDE.md` points to `AGENTS.md` and `docs/CONTEXT.md`, and three hooks in `.claude/settings.json`
+help: a cloud session start installs dependencies and fetches `congress.db`; edits to the database, workflows and
+theme ask for confirmation; and stopping runs the unit tests when a `.py` file changed and warns if `CHANGELOG.md`
+was not updated.
+
 The nightly `House import` workflow refreshes the data; CI never changes data.
