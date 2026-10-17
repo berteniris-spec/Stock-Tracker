@@ -3,6 +3,10 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Colour palette
+- App theme set in `.streamlit/config.toml` from the Color Hunt palette (cream, blue, deep blue, black), with a derived dark theme; caption colours in `app.py` follow it. Chart series keep their colour-blind-safe colours.
+- Verified: unit tests and the UI smoke test (0 failures). Not checked: the deployed app's data grids in both themes.
+
 ## UX round 3: accessibility
 - Captions: higher contrast and slightly larger text (light and dark mode).
 - "Download as CSV" under the main tables (member, committee and ticker trades, top tickers): a plain-file alternative to

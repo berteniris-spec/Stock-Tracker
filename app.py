@@ -140,9 +140,9 @@ def relevant_metric(col, df, sectors_known):
 st.markdown("""
 <style>
 /* captions: higher contrast and a slightly larger size than Streamlit's default light grey */
-[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(31,36,48,.88) !important; font-size: .92rem !important; }
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(0,0,0,.78) !important; font-size: .92rem !important; }
 @media (prefers-color-scheme: dark) {
-  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(240,242,246,.9) !important; }
+  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(239,236,227,.82) !important; }
 }
 </style>
 """, unsafe_allow_html=True)
