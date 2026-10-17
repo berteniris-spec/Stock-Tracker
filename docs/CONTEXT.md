@@ -35,13 +35,20 @@ Permissions in `.claude/settings.json` (applies to everyone using Claude Code he
 - No approval gates between agents; they stop only for the cases in `AGENTS.md`.
 - Hooks guard and verify instead of adding approval gates: the stop hook enforces passing tests, the path guard asks only for the database, workflows and theme (the "When to stop" cases). They are best-effort and must never break a session start.
 - Streamlit cannot select a tab from code, so the view switch stays a widget, not top tabs.
+- Broker list uses collapsed expanders (phone width) plus a table in an expander for comparison. Cost: on desktop, comparing brokers takes a click. Chosen so the page never scrolls sideways at 390px while keeping a real table for screen readers and comparison.
+- The paper-filing notice is one status caption plus one "About this data" expander, to shorten the top of every view.
 - Volume is a midpoint estimate of filed ranges; committee membership is a current snapshot, not as of the trade date.
 
 - `ui_check.py` reports and fixes nothing; it exits 1 only for page-level overflow or a failed load, so small tap targets never fail it. Playwright stays out of `requirements.txt` so CI and the cloud install are unchanged.
 - Permissions: routine read-only and test commands need no prompt; anything that records or publishes (`git add/commit/push`) asks; destructive or network shell tools are denied.
 
 ## Open work
-- Mobile and readability pass (proposed, not started). First concrete item, found by `ui_check.py`: on the Ticker view at 390px the page scrolls sideways because the broker table (about 429px wide, no scroll container) overflows. Then small tap targets at 390 (advisory): Refresh data button 26x480, sidebar toggle 28x28, Deploy 57x28, heading anchors 16x16. Also proposed: controls out of the sidebar, shorter top of page, two-up metrics, narrower tables, tabs on the Ticker view, quarterly chart labels. Re-run `/ui-check` after each fix.
+- Mobile and readability pass, on branch `claude/mobile-pass-1` (uncommitted when written). Re-run `/ui-check` after each step.
+  - Step 1 DONE: Ticker broker overflow fixed (eight expanders plus a table alternative in a scroll box); top of page shortened to one coverage caption and one "About this data" expander; 44px expander headers and link buttons. Page-level scroll at 390 is now zero in all 1280 views.
+  - Step 2: move the controls out of the sidebar. Also update `tests/ui_smoke.py` (drives `at.sidebar.radio`) and `scripts/ui_check.py`.
+  - Step 3: two-up metrics. Step 4: narrower tables. Step 5: tabs on the Ticker view. Step 6: chart polish (quarterly labels). Step 7: readability.
+  - Small items from step 1: add a visual hint that the broker table's Link column scrolls off to the right; make "Refresh data from GitHub" a 44px target (26x480 now, ours); missing-filings links wrap to three lines at 390. The rest of the small targets are Streamlit chrome (sidebar toggle 28x28, Deploy 57x28, Main menu 28x28, heading anchors 16x16) and are not ours to fix.
+  - Design system README still says "use a real table for short lists with links"; it needs the new pattern recorded (expanders for phone width plus a table alternative).
 - Workflow tooling ideas left for the owner to decide: a Claude PR review GitHub Action (needs a workflow file and an API-key secret); scheduled data-health checks (an unattended external task); a Playwright MCP server (runs a third-party package at session start).
 - Hooks, slash commands and the permission rules are untested in a live Claude Code session (see Known limits).
 - Senate trades (no bulk download; CSV load only).
@@ -52,6 +59,6 @@ Permissions in `.claude/settings.json` (applies to everyone using Claude Code he
 ## Known limits
 Filings lag trades by up to 45 days. Sector is unknown for trades with no ticker. Unmapped tickers are never flagged committee-relevant. EUR uses one latest rate for all dates.
 
-`ui_check.py` captures only the default state (USD, default volume basis, sidebar as rendered at load); EUR, volume basis and the open sidebar at 390 are not checked. The 390 screenshots are viewport height (the page scrolls inside `stMain`). Tap-target counts are advisory. The slash commands and permission rules have not been seen working in a live session.
+`ui_check.py` captures only the default state (USD, default volume basis, sidebar as rendered at load); EUR, volume basis and the open sidebar at 390 are not checked. The 390 screenshots are viewport height (the page scrolls inside `stMain`). Tap-target counts are advisory. Mobile step 1 was checked in a browser only on the default state: EUR and the Filed minimum basis were AppTest only, and the open sidebar at 390 and the deployed app were not checked. The slash commands and permission rules have not been seen working in a live session.
 
 Hooks: not yet seen firing in a live session; `${CLAUDE_PROJECT_DIR}` expansion, a fresh container install and the 120s test timeout are unchecked. The Bash guard has false positives (`cp congress.db /tmp/x`, `>` in SQL) and a false negative (Python writing the file). The stop hook runs the full unit tests (15s or more) whenever any `.py` file is uncommitted, and its CHANGELOG warning fires on any uncommitted code change.
