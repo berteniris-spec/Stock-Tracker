@@ -3,6 +3,10 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Agents and project context
+- Added `AGENTS.md` (Planner, Builder, Designer, Tester, Documenter and their hand-offs), subagent files in `.claude/agents/`, and `docs/CONTEXT.md` for resuming after a session clear.
+- Verified: documentation only; no code changed.
+
 ## Colour palette
 - App theme set in `.streamlit/config.toml` from the Color Hunt palette (cream, blue, deep blue, black), with a derived dark theme; caption colours in `app.py` follow it. Chart series keep their colour-blind-safe colours.
 - Verified: unit tests and the UI smoke test (0 failures). Not checked: the deployed app's data grids in both themes.
