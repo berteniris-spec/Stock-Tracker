@@ -14,6 +14,6 @@ Role: Tester. Report problems; fix nothing.
 Notes:
 - Use the interpreter that has both playwright and streamlit, for example `/path/to/venv/bin/python scripts/ui_check.py <dir>`.
 - The playwright version must match the installed chromium build: run `ls /opt/pw-browsers` (for example playwright 1.56.0 for chromium-1194). Install nothing unless the owner asks.
-- Only the default state is captured (USD, default volume basis, sidebar as rendered at load). EUR, the other volume basis and the open sidebar at 390 are not checked.
+- Only the default state is captured (USD, default volume basis, Settings expander closed). EUR, the other volume basis and the opened Settings expander at 390 are not checked.
 
 Environment dependencies: the Python package `playwright` (not in `requirements.txt`) and browsers in `/opt/pw-browsers`. If either is missing, say so; do not install anything unless the owner asks.

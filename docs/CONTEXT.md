@@ -8,7 +8,7 @@ Congress trades: a personal Streamlit dashboard that joins US congressional stoc
 ## How it fits together
 - `app.py`: the Streamlit app. Views: Overview, Member, Committee, Ticker. The view and selected id live in the URL (`?view=Ticker&id=NVDA`). Table rows open other views through `_goto` in session state.
 - `db.py`: schema and all queries. `house_importer.py`: House Clerk PDF import. `ingest_committees.py`: members and committees. `enrich_sectors.py`: sectors from FinanceDatabase. `prices.py`: closes, ratios and the ECB EUR rate. `brokers.py`: Dutch broker availability. `load_trades.py`, `load_sample.py`: CSV load and fictional demo rows.
-- Data: the nightly `House import` workflow rebuilds `congress.db` and force-pushes it to the `data` branch. The app downloads it on first start; the sidebar button refreshes it. `congress.db` is git-ignored.
+- Data: the nightly `House import` workflow rebuilds `congress.db` and force-pushes it to the `data` branch. The app downloads it on first start; the "Refresh data from GitHub" button in the Settings expander refreshes it. `congress.db` is git-ignored.
 - CI (`ci.yml`): fetches the database, runs `tests/test_*.py` and `tests/ui_smoke.py`. `scripts/wait_ci.sh` waits for a run.
 
 ## Workflow
@@ -36,6 +36,9 @@ Permissions in `.claude/settings.json` (applies to everyone using Claude Code he
 - Hooks guard and verify instead of adding approval gates: the stop hook enforces passing tests, the path guard asks only for the database, workflows and theme (the "When to stop" cases). They are best-effort and must never break a session start.
 - Streamlit cannot select a tab from code, so the view switch stays a widget, not top tabs.
 - Broker list uses collapsed expanders (phone width) plus a table in an expander for comparison. Cost: on desktop, comparing brokers takes a click. Chosen so the page never scrolls sideways at 390px while keeping a real table for screen readers and comparison.
+- No sidebar. The view switch is a horizontal `st.radio` (key `page`) under the title, not `st.segmented_control`: the radio works on every unpinned Streamlit version and wraps at 390px. Volume basis, Currency, the rate and price captions and Refresh live in a collapsed "Settings" expander, so nothing hides behind a sidebar toggle. Their help text is a visible caption because tooltips overflowed at 390px.
+- Risk: the radio CSS (44px options, ring, focus ring) matches `label[data-testid="stRadioOption"]`, Streamlit 1.66.0's DOM, because Streamlit exposes no theme CSS variables for it. An upgrade could silently stop the rules matching; re-run `/ui-check` and the Playwright measurements after upgrading.
+- Captions are forced to opacity 1 (Streamlit fades them to 0.6, about 3.4:1) to reach 10.5:1 light and 10.9:1 dark.
 - The paper-filing notice is one status caption plus one "About this data" expander, to shorten the top of every view.
 - Volume is a midpoint estimate of filed ranges; committee membership is a current snapshot, not as of the trade date.
 
@@ -45,9 +48,12 @@ Permissions in `.claude/settings.json` (applies to everyone using Claude Code he
 ## Open work
 - Mobile and readability pass, on branch `claude/mobile-pass-1` (uncommitted when written). Re-run `/ui-check` after each step.
   - Step 1 DONE: Ticker broker overflow fixed (eight expanders plus a table alternative in a scroll box); top of page shortened to one coverage caption and one "About this data" expander; 44px expander headers and link buttons. Page-level scroll at 390 is now zero in all 1280 views.
-  - Step 2: move the controls out of the sidebar. Also update `tests/ui_smoke.py` (drives `at.sidebar.radio`) and `scripts/ui_check.py`.
+  - Step 2 DONE (branch `claude/mobile-pass-2`): no sidebar. View switch is a horizontal radio under the title; Volume basis, Currency, captions and Refresh are in a collapsed "Settings" expander. 44px radios and buttons, caption contrast fixed, radio focus ring. `tests/ui_smoke.py` and `scripts/ui_check.py` updated. 1280 views PASS.
   - Step 3: two-up metrics. Step 4: narrower tables. Step 5: tabs on the Ticker view. Step 6: chart polish (quarterly labels). Step 7: readability.
-  - Small items from step 1: add a visual hint that the broker table's Link column scrolls off to the right; make "Refresh data from GitHub" a 44px target (26x480 now, ours); missing-filings links wrap to three lines at 390. The rest of the small targets are Streamlit chrome (sidebar toggle 28x28, Deploy 57x28, Main menu 28x28, heading anchors 16x16) and are not ours to fix.
+  - Small items: add a visual hint that the broker table's Link column scrolls off to the right; missing-filings links wrap to three lines at 390. Remaining small targets at 390 are Streamlit chrome (Deploy, Main menu, heading anchors, table toolbar icons, selectbox input and Open arrow) and are not ours to fix.
+  - Decide whether the radio focus ring should use `:focus-visible` (it stays after a mouse click now because it uses `:focus-within`). Designer decision.
+  - Audit the other `help=` tooltips (metrics, columns) for overflow at 390; only the Volume basis and Currency ones were replaced by captions.
+  - About 30px gap between each Settings radio and its caption (Streamlit spacing); cosmetic.
   - Design system README still says "use a real table for short lists with links"; it needs the new pattern recorded (expanders for phone width plus a table alternative).
 - Workflow tooling ideas left for the owner to decide: a Claude PR review GitHub Action (needs a workflow file and an API-key secret); scheduled data-health checks (an unattended external task); a Playwright MCP server (runs a third-party package at session start).
 - Hooks, slash commands and the permission rules are untested in a live Claude Code session (see Known limits).
@@ -59,6 +65,6 @@ Permissions in `.claude/settings.json` (applies to everyone using Claude Code he
 ## Known limits
 Filings lag trades by up to 45 days. Sector is unknown for trades with no ticker. Unmapped tickers are never flagged committee-relevant. EUR uses one latest rate for all dates.
 
-`ui_check.py` captures only the default state (USD, default volume basis, sidebar as rendered at load); EUR, volume basis and the open sidebar at 390 are not checked. The 390 screenshots are viewport height (the page scrolls inside `stMain`). Tap-target counts are advisory. Mobile step 1 was checked in a browser only on the default state: EUR and the Filed minimum basis were AppTest only, and the open sidebar at 390 and the deployed app were not checked. The slash commands and permission rules have not been seen working in a live session.
+`ui_check.py` captures only the default state (USD, default volume basis, Settings closed); EUR, volume basis and the opened Settings at 390 are not checked. The 390 screenshots are viewport height (the page scrolls inside `stMain`). Tap-target counts are advisory. Mobile step 2 was checked in Chromium at 390 and 1280 only: not real touch or mobile Safari, not other narrow widths, not the deployed app, not the real Refresh network path (failure was simulated), and the Filed minimum basis was AppTest only. The slash commands and permission rules have not been seen working in a live session.
 
 Hooks: not yet seen firing in a live session; `${CLAUDE_PROJECT_DIR}` expansion, a fresh container install and the 120s test timeout are unchecked. The Bash guard has false positives (`cp congress.db /tmp/x`, `>` in SQL) and a false negative (Python writing the file). The stop hook runs the full unit tests (15s or more) whenever any `.py` file is uncommitted, and its CHANGELOG warning fires on any uncommitted code change.

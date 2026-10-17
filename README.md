@@ -69,7 +69,7 @@ can't be classified this way.
   database, refreshes committees, imports only new filings, and force-pushes `congress.db` to the `data`
   branch (a single commit, so history doesn't grow). Run it with a `year` to backfill an earlier year.
 - The app downloads the database from that branch on first start (`DB_URL` overrides the location), and the
-  sidebar has a **Refresh data from GitHub** button. A local `congress.db` is never overwritten unless you press it.
+  collapsed **Settings** section (under the view switch) has a **Refresh data from GitHub** button. A local `congress.db` is never overwritten unless you press it.
 - Deploy `app.py` on Streamlit Community Cloud from this repo's `main` branch; no secrets are needed because
   the repo is public.
 - The underlying filings are public records. Keep use non-commercial (the Clerk's terms bar commercial and
