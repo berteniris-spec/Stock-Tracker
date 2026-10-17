@@ -160,6 +160,12 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
   label[data-testid="stRadioOption"]:not([data-selected="true"]) > div > div:first-child { border-color: rgba(239,236,227,.55) !important; }
   label[data-testid="stRadioOption"]:focus-within { outline-color: #8fabd4; }
 }
+/* metric values wrap at spaces instead of being cut off with an ellipsis ("NYSE American", "ETF / fund") */
+[data-testid="stMetric"] [data-testid="stMetricValue"] * { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; }
+/* just above the phone breakpoint the four-up columns are about 140px: a slightly smaller value keeps "$5,919.82" whole */
+@media (min-width: 641px) and (max-width: 720px) {
+  [data-testid="stMetricValue"], [data-testid="stMetricValue"] * { font-size: clamp(1.5rem, 5vw, 2.25rem); }
+}
 /* phone: metric strips two per row (Streamlit stacks columns one per row at 640px), values sized to fit */
 @media (max-width: 640px) {
   [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] { flex: 0 0 calc(50% - .55rem); width: calc(50% - .55rem); min-width: 0; }
