@@ -135,8 +135,16 @@ def esc(s):
     return s.replace("$", "\\$")
 
 
-NO_SECTORS_NOTE = ("Committee-relevant is n/a: none of these committees maps to sectors, "
-                   "so the sector heuristic does not apply.")
+NO_SECTORS_NOTE = {"Member": "Committee-relevant is n/a: none of this member's committees map to sectors, "
+                             "so the sector heuristic does not apply.",
+                   "Committee": "Committee-relevant is n/a: this committee does not map to sectors, "
+                                "so the sector heuristic does not apply."}
+
+
+def vol_caption(vol, scope=""):
+    """Visible caption under a volume metric: the basis and the exact figure (tooltips are not reachable on touch)."""
+    what = "the lowest figure in each filed range" if vol_label == "Min. volume" else "the midpoint of each filed range"
+    st.caption(esc(f"{vol_label} is {what}{scope}. Exact: {usd(vol)}."))
 
 
 def relevant_metric(col, df, sectors_known):
@@ -266,8 +274,9 @@ if page == "Overview":
     k2.metric("Members", f"{stats['members']:,}", help="Members of Congress with at least one imported trade.")
     k3.metric(vol_label, short(stats["volume"]), help=esc(f"{vol_full}. Exact: {usd(stats['volume'])}"))
     newest_d = pd.to_datetime(stats["newest"]) if stats["newest"] else None
-    k4.metric("Latest filing", newest_d.strftime("%d %b") if newest_d is not None else "n/a",
+    k4.metric("Latest filing", newest_d.strftime("%d %b" if newest_d.year == pd.Timestamp.today().year else "%d %b %Y") if newest_d is not None else "n/a",
               help=f"Newest disclosure date in the data: {stats['newest']}" if stats["newest"] else None)
+    vol_caption(stats["volume"], ", summed over all trades")
     if True:
         st.subheader("Most active members")
         top_members = db.members_with_trades(con).head(25)
@@ -333,8 +342,9 @@ elif page == "Member":
     b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
     sectors_known = bool(db.member_sectors(con, bid))
     relevant_metric(c, tr, sectors_known)
+    vol_caption(vol)
     if not sectors_known:
-        st.caption(NO_SECTORS_NOTE)
+        st.caption(NO_SECTORS_NOTE["Member"])
     st.subheader("Committees")
     if mc.empty:
         st.info("No current committee assignments in the data for this member.")
@@ -362,8 +372,9 @@ elif page == "Committee":
     b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
     sectors_known = bool(db.committee_sectors(cid))
     relevant_metric(c, tr, sectors_known)
+    vol_caption(vol)
     if not sectors_known:
-        st.caption(NO_SECTORS_NOTE)
+        st.caption(NO_SECTORS_NOTE["Committee"])
     st.subheader("Members")
     only_traders = st.checkbox("Only members with trades", value=True)
     if only_traders:
@@ -407,13 +418,14 @@ else:
         b.metric("Fwd P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na)
         c.metric("PEG", f"{prof['peg']:.2f}" if prof["peg"] else na)
         st.caption("Ratios come from Yahoo Finance, refreshed nightly, and are shown for reference: a low or high number is not "
-                   "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies). "
-                   "P/E is price over the last 12 months of earnings, Fwd P/E uses expected earnings for the next 12 months, "
-                   "and PEG is P/E divided by expected earnings growth; n/a means no positive earnings, no growth figure or no data.")
+                   "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies).")
+        st.caption("P/E is price over the last 12 months of earnings, Fwd P/E uses expected earnings for the next 12 months, "
+                   "and PEG is P/E divided by expected earnings growth. n/a means no positive earnings, no growth figure or no data.")
     a, b = st.columns(2)
     a.metric("Trades", len(df))
     vol = db.volume_of(df)
     b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
+    vol_caption(vol)
     show(df, download=f"ticker_{t}_trades")
 
     st.subheader("Where can I buy it from the Netherlands?")

@@ -48,6 +48,16 @@ def check_vol_label(at, label):
         print("ok", label, "volume label", want)
 
 
+def check_vol_caption(at, label):
+    """A visible caption names the basis and the exact figure (tooltips are not reachable on touch)."""
+    want = "Min. volume is" if at.radio(key="basis").value == "Filed minimum" else "Est. volume is"
+    if not any(str(c.value).startswith(want) and "Exact: " in str(c.value) for c in at.caption):
+        failures.append(f"{label} volume caption")
+        print(f"::error title=UI smoke: {label} volume caption::no caption starting {want!r} with 'Exact: '")
+    else:
+        print("ok", label, "volume caption")
+
+
 def has_caption(at, text):
     return any(text in str(c.value) for c in at.caption)
 
@@ -73,6 +83,13 @@ def main():
     check(at, "Overview")
     check_metrics(at, "Overview")
     check_vol_label(at, "Overview")
+    check_vol_caption(at, "Overview")
+    lf = [m.value for m in at.metric if m.label == "Latest filing"]
+    if lf and (lf[0] == "n/a" or len(lf[0].split()) in (2, 3)):
+        print("ok Latest filing", lf[0])
+    else:
+        failures.append("latest filing")
+        print(f"::error title=UI smoke: latest filing::unexpected value {lf}")
     # no sidebar any more: the controls live in a Settings expander under the title
     if len(at.sidebar) == 0:
         print("ok no sidebar children")
@@ -114,9 +131,11 @@ def main():
         check(at, f"{page} default")
         check_metrics(at, f"{page} default")
         check_vol_label(at, f"{page} default")
+        check_vol_caption(at, f"{page} default")
         at.radio(key="basis").set_value("Filed minimum").run()
         check_metrics(at, f"{page} Filed minimum")
         check_vol_label(at, f"{page} Filed minimum")
+        check_vol_caption(at, f"{page} Filed minimum")
         at.radio(key="basis").set_value("Midpoint estimate").run()
         for item in sample:
             try:
@@ -133,7 +152,10 @@ def main():
 
     # members and committees with no sector mapping show the visible n/a note; mapped ones do not
     import db
-    note = "Committee-relevant is n/a"
+    notes = {"Member": "Committee-relevant is n/a: none of this member's committees map to sectors, "
+                       "so the sector heuristic does not apply.",
+             "Committee": "Committee-relevant is n/a: this committee does not map to sectors, "
+                          "so the sector heuristic does not apply."}
     for page, key, ids, mapped in (("Member", "member_sel", members, lambda i: db.member_sectors(con, i)),
                                    ("Committee", "committee_sel", committees, db.committee_sectors)):
         for want_note in (True, False):
@@ -144,6 +166,7 @@ def main():
             at = fresh()
             at.radio(key="page").set_value(page).run()
             at.selectbox(key=key).set_value(pick).run()
+            note = notes[page]
             rel = [m for m in at.metric if m.label == "Committee-relevant"]
             if has_caption(at, note) != want_note or (want_note and (not rel or rel[0].value != "n/a")):
                 failures.append(f"{page} sector note {pick}")
