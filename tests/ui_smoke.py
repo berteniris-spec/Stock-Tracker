@@ -44,12 +44,34 @@ def main():
 
     at = fresh()
     check(at, "Overview")
-    # every sidebar option combination on the overview
-    for radio in at.sidebar.radio:
-        for opt in radio.options:
-            if radio.label in ("Currency", "Volume basis"):
-                radio.set_value(opt).run()
-                check(at, f"Overview with {radio.label}={opt}")
+    # no sidebar any more: the controls live in a Settings expander under the title
+    if len(at.sidebar) == 0:
+        print("ok no sidebar children")
+    else:
+        failures.append("sidebar")
+        print("::error title=UI smoke: sidebar::the sidebar is not empty")
+    if any(e.label == "Settings" for e in at.expander) and at.button(key="refresh") is not None:
+        print("ok Settings expander and refresh button")   # the refresh button is not clicked: it would download the database
+    else:
+        failures.append("settings")
+        print("::error title=UI smoke: settings::Settings expander or refresh button missing")
+    # every option combination on the overview (re-fetch the radio after each run)
+    for key, label in (("currency", "Currency"), ("basis", "Volume basis")):
+        for opt in at.radio(key=key).options:
+            at.radio(key=key).set_value(opt).run()
+            check(at, f"Overview with {label}={opt}")
+
+    # settings survive a view change
+    at = fresh()
+    at.radio(key="currency").set_value("EUR").run()
+    basis_before = at.radio(key="basis").value
+    at.radio(key="page").set_value("Ticker").run()
+    at.radio(key="page").set_value("Overview").run()
+    if at.radio(key="currency").value == "EUR" and at.radio(key="basis").value == basis_before:
+        print("ok settings persist across views")
+    else:
+        failures.append("persistence")
+        print("::error title=UI smoke: persistence::currency or basis changed after switching views")
 
     for page, key, ids in (("Member", "member_sel", members), ("Committee", "committee_sel", committees),
                            ("Ticker", "ticker_sel", tickers)):
@@ -57,7 +79,7 @@ def main():
         if page == "Member":
             sample = sample + paper_only[:5]
         at = fresh()
-        at.sidebar.radio[0].set_value(page).run()
+        at.radio(key="page").set_value(page).run()
         check(at, f"{page} default")
         for item in sample:
             try:
@@ -68,10 +90,9 @@ def main():
                 continue
             check(at, f"{page} {item}")
         # the whole view again in EUR
-        for radio in at.sidebar.radio:
-            if radio.label == "Currency" and "EUR" in radio.options:
-                radio.set_value("EUR").run()
-                check(at, f"{page} in EUR")
+        if "EUR" in at.radio(key="currency").options:
+            at.radio(key="currency").set_value("EUR").run()
+            check(at, f"{page} in EUR")
 
     # shared links restore the view; a stale id falls back instead of crashing
     for view, ident in (("Ticker", tickers[0]), ("Member", members[0]), ("Committee", committees[0]),
@@ -81,6 +102,10 @@ def main():
         at.query_params["id"] = ident
         at.run()
         check(at, f"shared link view={view} id={ident}")
+        want = view if view in ("Overview", "Member", "Committee", "Ticker") else "Overview"
+        if at.radio(key="page").value != want:
+            failures.append(f"shared link view={view}")
+            print(f"::error title=UI smoke: shared link view={view}::view is {at.radio(key='page').value}, expected {want}")
 
     print(f"UI smoke finished: {len(failures)} failure(s)")
     sys.exit(1 if failures else 0)

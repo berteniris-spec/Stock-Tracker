@@ -48,7 +48,7 @@ con.executescript(db.SCHEMA)  # a database published before newer tables existed
 
 
 RATE, RATE_DATE = db.usd_per_eur(con)      # USD per 1 EUR (ECB reference rate)
-CURRENCY = "USD"                           # set from the sidebar below
+CURRENCY = "USD"                           # set from Settings below
 
 
 def conv(x):
@@ -147,31 +147,13 @@ st.markdown("""
 }
 /* tap targets: at least 44px tall for expander headers and link buttons */
 [data-testid="stExpander"] summary, [data-testid="stLinkButton"] a { min-height: 44px; }
+/* tap targets: buttons and each radio option (view switch, settings) at least 44px, wrapped rows spaced apart */
+[data-testid="stButton"] button, [data-testid="stDownloadButton"] button { min-height: 44px; }
+label[data-testid="stRadioOption"] { min-height: 44px; align-items: center; }
+[data-testid="stRadioGroup"] { row-gap: .25rem; }
 </style>
 """, unsafe_allow_html=True)
 st.title("Congress trades")
-if db.has_sample_data(con):
-    st.warning("Sample data is loaded: the members marked *(fictional)* and their trades are invented demo rows. "
-               "Run `python load_sample.py --purge` to remove them.")
-known, total = db.sector_coverage(con)
-paper = db.paper_filings(con)
-if not paper.empty:
-    n_members = paper["bioguide_id"].nunique()
-    gap = (f"{len(paper)} paper filing{'s' if len(paper) != 1 else ''} not imported "
-           f"({n_members} member{'s' if n_members != 1 else ''}).")
-    st.caption(f"**Coverage gap:** {gap} Details under About this data.")
-with st.expander("About this data"):
-    st.markdown(
-        "- **Volume** is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in the sidebar).\n"
-        "- **Filings lag trades** by up to 45 days, so a trade is old news by the time it is public.\n"
-        "- **Committee data** is a current snapshot, not membership as of each trade date.\n"
-        + (f"- **Sector** is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%), from the FinanceDatabase "
-           "classification; sectors are approximate and the committee-relevance flag only applies where a sector is known.\n" if total else ""))
-    if not paper.empty:
-        st.markdown("Some members may have traded more than shown. Filings not imported:")
-        rows = "\n".join(f"| {r.member} | {r.year} | [Open filing {r.doc_id} (PDF)]({r.url}) |" for r in paper.itertuples())
-        st.markdown("| Member | Year | Filing |\n|---|---|---|\n" + rows)
-
 VIEWS = ["Overview", "Member", "Committee", "Ticker"]
 SELECT_KEYS = {"Member": "member_sel", "Committee": "committee_sel", "Ticker": "ticker_sel"}
 if "page" not in st.session_state:        # first load of this session: restore the view from a shared link
@@ -195,30 +177,58 @@ def sync_url(view, selected=None):
 _goto = st.session_state.pop("_goto", None)
 if _goto:
     st.session_state["page"], st.session_state[_goto[1]] = _goto[0], _goto[2]
-page = st.sidebar.radio("View", VIEWS, key="page")
-basis = st.sidebar.radio(
-    "Volume basis", ["Midpoint estimate", "Filed minimum"],
-    help="Filings give ranges, some very wide ($5M-$25M). The midpoint can overstate a trade; "
-         "the filed minimum is a conservative lower bound.")
-db.set_basis("min" if basis == "Filed minimum" else "mid")
-vol_label = "Volume (filed minimum)" if basis == "Filed minimum" else "Est. volume (midpoint)"
-CURRENCY = st.sidebar.radio(
-    "Currency", ["USD", "EUR"] if RATE else ["USD"],
-    help="Filings and prices are in US dollars. EUR uses the latest ECB reference rate for ALL amounts, "
-         "including past trades (not the rate on the trade date).")
-if RATE:
-    st.sidebar.caption(f"ECB rate: €1 = ${RATE:.4f} ({RATE_DATE})")
-else:
-    st.sidebar.caption("No EUR rate stored yet; it is fetched by the nightly update.")
-have, total_t, newest = db.price_freshness(con)
-if newest:
-    st.sidebar.caption(f"Prices: end-of-day closes, newest {newest}; {have:,} of {total_t:,} tickers have one.")
-if st.sidebar.button("Refresh data from GitHub"):
+page = st.radio("View", VIEWS, key="page", horizontal=True, label_visibility="collapsed")
+with st.expander("Settings"):
+    basis = st.radio(
+        "Volume basis", ["Midpoint estimate", "Filed minimum"], key="basis", horizontal=True,
+        help="Filings give ranges, some very wide ($5M-$25M). The midpoint can overstate a trade; "
+             "the filed minimum is a conservative lower bound.")
+    currency_opts = ["USD", "EUR"] if RATE else ["USD"]
+    if st.session_state.get("currency") not in (None, *currency_opts):
+        st.session_state.pop("currency")     # e.g. EUR chosen, then a refresh left no stored rate
+    CURRENCY = st.radio(
+        "Currency", currency_opts, key="currency", horizontal=True,
+        help="Filings and prices are in US dollars. EUR uses the latest ECB reference rate for ALL amounts, "
+             "including past trades (not the rate on the trade date).")
+    if RATE:
+        st.caption(f"ECB rate: €1 = ${RATE:.4f} ({RATE_DATE})")
+    else:
+        st.caption("No EUR rate stored yet; it is fetched by the nightly update.")
+    have, total_t, newest = db.price_freshness(con)
+    if newest:
+        st.caption(f"Prices: end-of-day closes, newest {newest}; {have:,} of {total_t:,} tickers have one.")
+    refresh = st.button("Refresh data from GitHub", key="refresh", use_container_width=True)
+err_slot = st.container()                    # outside the collapsed expander, so a failure is visible
+if refresh:
     try:
         download_db()
         st.rerun()
     except Exception as e:
-        st.sidebar.error(f"Refresh failed: {e}")
+        err_slot.error(f"Refresh failed: {e}")
+db.set_basis("min" if basis == "Filed minimum" else "mid")
+vol_label = "Volume (filed minimum)" if basis == "Filed minimum" else "Est. volume (midpoint)"
+
+if db.has_sample_data(con):
+    st.warning("Sample data is loaded: the members marked *(fictional)* and their trades are invented demo rows. "
+               "Run `python load_sample.py --purge` to remove them.")
+known, total = db.sector_coverage(con)
+paper = db.paper_filings(con)
+if not paper.empty:
+    n_members = paper["bioguide_id"].nunique()
+    gap = (f"{len(paper)} paper filing{'s' if len(paper) != 1 else ''} not imported "
+           f"({n_members} member{'s' if n_members != 1 else ''}).")
+    st.caption(f"**Coverage gap:** {gap} Details under About this data.")
+with st.expander("About this data"):
+    st.markdown(
+        "- **Volume** is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in Settings).\n"
+        "- **Filings lag trades** by up to 45 days, so a trade is old news by the time it is public.\n"
+        "- **Committee data** is a current snapshot, not membership as of each trade date.\n"
+        + (f"- **Sector** is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%), from the FinanceDatabase "
+           "classification; sectors are approximate and the committee-relevance flag only applies where a sector is known.\n" if total else ""))
+    if not paper.empty:
+        st.markdown("Some members may have traded more than shown. Filings not imported:")
+        rows = "\n".join(f"| {r.member} | {r.year} | [Open filing {r.doc_id} (PDF)]({r.url}) |" for r in paper.itertuples())
+        st.markdown("| Member | Year | Filing |\n|---|---|---|\n" + rows)
 
 if page == "Overview":
     sync_url("Overview")

@@ -6,8 +6,9 @@ Needs the `playwright` package and a Chromium in PLAYWRIGHT_BROWSERS_PATH (defau
 Neither is in requirements.txt. Read-only: it never writes to congress.db. The interpreter that runs
 this script must import both playwright and streamlit (it starts the app with the same interpreter),
 and the playwright version must match the installed chromium build.
-Limit: only the default state is captured (USD, default volume basis, sidebar as rendered at load).
-EUR, the other volume basis and the open sidebar at 390 are not checked.
+Limit: only the default state is captured (USD, default volume basis). The Settings expander is not
+opened, and EUR and the Filed minimum basis are not captured. A sidebar or its toggle still in the
+page is reported as an advisory line and never changes the exit code.
 Exit codes: 0 clean, 1 page-level overflow or did not finish loading, 2 environment problem.
 """
 import argparse
@@ -58,13 +59,6 @@ JS = r"""
     }
     return false;
   };
-  const sb = document.querySelector('[data-testid="stSidebar"]');
-  let sbState = 'collapsed';
-  if (sb) {
-    const sr = sb.getBoundingClientRect(), ae = sb.getAttribute('aria-expanded');
-    const off = sr.right <= 0 || sr.left >= vw;
-    sbState = (ae === 'false' || off || sr.width === 0) ? 'collapsed' : 'expanded';
-  }
   const main = document.querySelector('[data-testid="stMain"]') || document.querySelector('[data-testid="stAppViewContainer"]');
   const pageScroll = document.documentElement.scrollWidth > vw + 1 || (main && main.scrollWidth > main.clientWidth + 1);
   const overflow = [], cut = [], small = [];
@@ -72,14 +66,11 @@ JS = r"""
   for (const el of document.querySelectorAll('body *')) {
     if (!visible(el)) continue;
     const r = el.getBoundingClientRect();
-    const inSidebar = !!el.closest('[data-testid="stSidebar"]');
-    if (r.right > widestRight && getComputedStyle(el).position !== 'fixed' &&
-        !el.closest('[data-testid="stSidebarResizeHandle"]') && !(inSidebar && sbState === 'collapsed')) {
+    if (r.right > widestRight && getComputedStyle(el).position !== 'fixed') {
       widestRight = r.right;
       widest = sel(el) + " '" + snip(el) + "' right=" + Math.round(r.right) + ' > ' + vw;
     }
-    if ((r.right > vw + 1 || r.left < -1) && !scrollable(el) && getComputedStyle(el).position !== 'fixed' &&
-        !el.closest('[data-testid="stSidebarResizeHandle"]') && !(inSidebar && sbState === 'collapsed'))
+    if ((r.right > vw + 1 || r.left < -1) && !scrollable(el) && getComputedStyle(el).position !== 'fixed')
       overflow.push(sel(el) + ' "' + snip(el) + '"');
     if (r.width < 4 || r.height < 4 || el.closest('[aria-hidden="true"]') ||
         el.closest('a[data-testid="stSkipToContent"]')) continue;
@@ -87,14 +78,14 @@ JS = r"""
     if ((cs.overflowX === 'hidden' || cs.textOverflow === 'ellipsis') && el.scrollWidth > el.clientWidth + 1 &&
         (el.innerText || '').trim() && !el.closest('[data-testid="stDataFrame"]'))
       cut.push(sel(el) + ' "' + snip(el) + '"');
-    if (el.matches('a[href], button, input, select, textarea, [role="button"], [role="tab"], [role="radio"], [role="checkbox"]') &&
+    if (el.matches('a[href], button, input, select, textarea, [role="button"], [role="tab"], [role="radio"], [role="checkbox"], label[data-testid="stRadioOption"]') &&
         !el.matches('input[type="radio"], input[type="checkbox"]') &&
         !el.closest('[data-testid="stTooltipIcon"]') &&
         (r.width < 44 || r.height < 44))
       small.push(sel(el) + ' "' + snip(el) + '" ' + Math.round(r.width) + 'x' + Math.round(r.height));
   }
   const uniq = (a) => [...new Set(a)];
-  return {pageScroll: !!pageScroll, overflow: uniq(overflow), cut: uniq(cut), small: uniq(small), sidebar: sbState, widest: widest, vw: vw};
+  return {pageScroll: !!pageScroll, overflow: uniq(overflow), cut: uniq(cut), small: uniq(small), sidebar: document.querySelectorAll('[data-testid="stSidebar"], [data-testid="stExpandSidebarButton"], [data-testid="stSidebarCollapsedControl"]').length > 0, widest: widest, vw: vw};
 }
 """
 
@@ -292,8 +283,10 @@ def shoot(browser, url, view, width, theme, out):
     if r["cut"]:
         parts.append("suspected cut-off text: " + "; ".join(r["cut"][:5]))
     if width == 390 and r["small"]:
-        parts.append(f"advisory, sidebar={r['sidebar']}, {len(r['small'])} targets under 44x44: "
+        parts.append(f"advisory, {len(r['small'])} targets under 44x44: "
                      + "; ".join(r["small"][:5]))
+    if r["sidebar"]:
+        parts.append("advisory, sidebar or toggle still present")
     print(f"{view} {width} {theme}: {'ISSUES ' + ' | '.join(parts) if parts else 'PASS'}  {path}")
     return bool(r["pageScroll"])
 
