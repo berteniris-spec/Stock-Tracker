@@ -90,6 +90,15 @@ Every change goes through the same cycle: **build, test, document**.
 4. **Document**: add an entry to `CHANGELOG.md` (what changed, how it was verified) and update this README if behaviour
    or setup changed.
 
+In Claude Code, `/ship` runs the tests, checks the docs, then commits and pushes on a branch (it stops before a PR or
+merge), `/resume` summarises the project state read-only, and `/ui-check` runs `python scripts/ui_check.py` and reviews
+the screenshots. The script screenshots the four views at 390px and 1280px in light and dark and reports sideways
+scroll, overflow and small tap targets (exit 0 clean, 1 overflow or load failure, 2 environment problem). Playwright is
+not in `requirements.txt`: the Python that runs the script must import both `playwright` and `streamlit`, and the
+Playwright version must match the installed Chromium (1.56.0 for chromium-1194). `.claude/settings.json` also sets
+permissions: read-only git, `ls` and the tests run without asking; `git add`, `commit` and `push` ask; `rm`, `mv`,
+`curl` and `wget` are denied.
+
 For Claude Code, `CLAUDE.md` points to `AGENTS.md` and `docs/CONTEXT.md`, and three hooks in `.claude/settings.json`
 help: a cloud session start installs dependencies and fetches `congress.db`; edits to the database, workflows and
 theme ask for confirmation; and stopping runs the unit tests when a `.py` file changed and warns if `CHANGELOG.md`

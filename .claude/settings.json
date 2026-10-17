@@ -12,5 +12,32 @@
     "Stop": [
       {"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/on_stop.py", "timeout": 150}]}
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch --show-current)",
+      "Bash(git rev-parse:*)",
+      "Bash(git remote get-url:*)",
+      "Bash(ls:*)",
+      "Bash(python tests/test_*.py)",
+      "Bash(python tests/ui_smoke.py)",
+      "Read",
+      "Glob",
+      "Grep"
+    ],
+    "ask": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ],
+    "deny": [
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
+    ]
   }
 }

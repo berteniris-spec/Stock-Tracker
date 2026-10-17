@@ -3,6 +3,19 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Workflow commands and UI check
+- Three Claude Code slash commands in `.claude/commands/`:
+  - `/ship`: runs the tests, checks the docs, commits and pushes on a branch. It stops before any PR or merge.
+  - `/resume`: read-only summary of `docs/CONTEXT.md`, the branch, open PRs and the next step.
+  - `/ui-check`: runs `scripts/ui_check.py`, reads a few screenshots and reports. It fixes nothing.
+- `scripts/ui_check.py` starts the app headless and uses Playwright with the preinstalled Chromium to screenshot Overview, Member, Committee and Ticker at 390px and 1280px, light and dark. It reports page-level sideways scroll (naming the widest element), overflowing elements and suspected cut-off text, and, at 390px only, tap targets under 44px (advisory). It waits for the page title and does a warm-up load first. Exit codes: 0 clean, 1 page-level overflow or the page did not finish loading, 2 environment problem.
+- Playwright is not a repo dependency. The interpreter running the script must import both `playwright` and `streamlit`, and the Playwright version must match the installed Chromium build (1.56.0 for chromium-1194).
+- Repo-wide behaviour change: `.claude/settings.json` now has a `permissions` block for everyone using Claude Code here. Allowed without asking: read-only git (`status`, `diff`, `log`, `branch --show-current`, `rev-parse`, `remote get-url`), `ls`, `python tests/test_*.py`, `python tests/ui_smoke.py`, Read, Glob, Grep. Ask first: `git add`, `git commit`, `git push`. Denied: `rm`, `mv`, `curl`, `wget`. The hooks block is unchanged.
+- First finding from the script (app issue, not fixed): on the Ticker view at 390px the page scrolls sideways because the broker table (about 429px wide, no scroll container) overflows. Overview, Member and Committee at 390px show only advisory small tap targets (Refresh data button 26x480, sidebar toggle 28x28, Deploy 57x28, heading anchors 16x16).
+- Verified: unit tests and `tests/ui_smoke.py` pass; `ui_check.py` run five times with identical output and the first screenshot never blank; the forced-failure path exits 1 and stops the server; the missing-Playwright and output-inside-repo paths exit 2.
+- Not checked: the slash commands and permission rules in a live session; EUR, volume basis and the open sidebar at 390px in `ui_check.py`; the deployed app.
+- Known limits: only the default state is captured (USD, default volume basis, sidebar as rendered at load). The 390px screenshots are viewport height because the page scrolls inside `stMain`. Tap-target counts are advisory.
+
 ## Session hooks and CLAUDE.md
 - `.claude/settings.json` registers three Claude Code hooks (scripts in `.claude/hooks/`):
   - `session_start.sh` (cloud sessions only): installs `requirements.txt` plus reportlab, fetches `congress.db` from the `data` branch if it is missing or older than 12 hours, and prints the top of `docs/CONTEXT.md`. It never fails the session.

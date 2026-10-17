@@ -14,6 +14,12 @@ Congress trades: a personal Streamlit dashboard that joins US congressional stoc
 ## Workflow
 Roles and the loop are in `AGENTS.md` (Planner, Builder, Designer, Tester, Documenter; subagents in `.claude/agents/`). Dev loop: build, test, document (see `README.md`). Branch off `main`; open a PR only when the owner asks; merge only when the owner says.
 
+Slash commands (`.claude/commands/`): `/ship` (tests, doc check, commit and push on a branch; stops before PR or merge), `/resume` (read-only summary of context, branch, open PRs, next step), `/ui-check` (runs the script below, reads a few screenshots, fixes nothing).
+
+`scripts/ui_check.py`: starts the app headless and screenshots Overview, Member, Committee and Ticker at 390px and 1280px, light and dark, with Playwright and the preinstalled Chromium. Reports page-level sideways scroll (names the widest element), overflowing elements, cut-off text suspects and, at 390 only, tap targets under 44px (advisory). Exit 0 clean, 1 page-level overflow or load failure, 2 environment problem. Playwright is not a repo dependency: the interpreter must import `playwright` and `streamlit`, and the Playwright version must match the Chromium build (1.56.0 for chromium-1194).
+
+Permissions in `.claude/settings.json` (applies to everyone using Claude Code here): allow read-only git, `ls`, `python tests/test_*.py`, `python tests/ui_smoke.py`, Read, Glob, Grep; ask for `git add`, `commit`, `push`; deny `rm`, `mv`, `curl`, `wget`.
+
 `CLAUDE.md` points Claude Code to `AGENTS.md` and this file. Hooks in `.claude/settings.json` (scripts in `.claude/hooks/`):
 - `session_start.sh`: cloud sessions only; installs requirements plus reportlab, fetches `congress.db` from the `data` branch if missing or over 12 hours old, prints the top of this file. Never fails the session.
 - `guard_paths.py`: asks before edits to `congress.db`, `.github/workflows/`, `.streamlit/config.toml`; best-effort Bash check.
@@ -31,10 +37,13 @@ Roles and the loop are in `AGENTS.md` (Planner, Builder, Designer, Tester, Docum
 - Streamlit cannot select a tab from code, so the view switch stays a widget, not top tabs.
 - Volume is a midpoint estimate of filed ranges; committee membership is a current snapshot, not as of the trade date.
 
+- `ui_check.py` reports and fixes nothing; it exits 1 only for page-level overflow or a failed load, so small tap targets never fail it. Playwright stays out of `requirements.txt` so CI and the cloud install are unchanged.
+- Permissions: routine read-only and test commands need no prompt; anything that records or publishes (`git add/commit/push`) asks; destructive or network shell tools are denied.
+
 ## Open work
-- Mobile and readability pass (proposed, not started): controls out of the sidebar, shorter top of page, two-up metrics, narrower tables, tabs on the Ticker view, quarterly chart labels, phone-width screenshots in the smoke test.
-- Workflow tooling ideas not done: slash commands `/ship`, `/resume`, `/ui-check`; a Claude PR review GitHub Action; scheduled data-health checks; a Playwright MCP server; a permissions allowlist.
-- Hooks are untested in a live Claude Code session (see Known limits).
+- Mobile and readability pass (proposed, not started). First concrete item, found by `ui_check.py`: on the Ticker view at 390px the page scrolls sideways because the broker table (about 429px wide, no scroll container) overflows. Then small tap targets at 390 (advisory): Refresh data button 26x480, sidebar toggle 28x28, Deploy 57x28, heading anchors 16x16. Also proposed: controls out of the sidebar, shorter top of page, two-up metrics, narrower tables, tabs on the Ticker view, quarterly chart labels. Re-run `/ui-check` after each fix.
+- Workflow tooling ideas left for the owner to decide: a Claude PR review GitHub Action (needs a workflow file and an API-key secret); scheduled data-health checks (an unattended external task); a Playwright MCP server (runs a third-party package at session start).
+- Hooks, slash commands and the permission rules are untested in a live Claude Code session (see Known limits).
 - Senate trades (no bulk download; CSV load only).
 - OCR for scanned paper filings (`no_text`); review `partial` filings; former members' filings (`unmatched_member`) are skipped.
 - Full screen-reader and keyboard audit.
@@ -42,5 +51,7 @@ Roles and the loop are in `AGENTS.md` (Planner, Builder, Designer, Tester, Docum
 
 ## Known limits
 Filings lag trades by up to 45 days. Sector is unknown for trades with no ticker. Unmapped tickers are never flagged committee-relevant. EUR uses one latest rate for all dates.
+
+`ui_check.py` captures only the default state (USD, default volume basis, sidebar as rendered at load); EUR, volume basis and the open sidebar at 390 are not checked. The 390 screenshots are viewport height (the page scrolls inside `stMain`). Tap-target counts are advisory. The slash commands and permission rules have not been seen working in a live session.
 
 Hooks: not yet seen firing in a live session; `${CLAUDE_PROJECT_DIR}` expansion, a fresh container install and the 120s test timeout are unchecked. The Bash guard has false positives (`cp congress.db /tmp/x`, `>` in SQL) and a false negative (Python writing the file). The stop hook runs the full unit tests (15s or more) whenever any `.py` file is uncommitted, and its CHANGELOG warning fires on any uncommitted code change.
