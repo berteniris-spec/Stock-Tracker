@@ -1,0 +1,13 @@
+# Colours from the Congress Trades design system (Color Hunt palette efece3 / 8fabd4 / 4a70a9 / 000000).
+# Streamlit follows the visitor's system light/dark setting when both sections exist.
+[theme.light]
+primaryColor = "#4a70a9"
+backgroundColor = "#efece3"
+secondaryBackgroundColor = "#8fabd4"
+textColor = "#000000"
+
+[theme.dark]
+primaryColor = "#8fabd4"
+backgroundColor = "#0d1219"
+secondaryBackgroundColor = "#1c2a3f"
+textColor = "#efece3"
