@@ -3,6 +3,16 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Mobile pass, step 1
+- Ticker view, "Where can I buy it from the Netherlands?": the 4-column table is now eight collapsed expanders titled "NAME: status", each with the note and an "Open NAME" link button. A sibling expander "Show the brokers as a table" holds a real HTML table in a sideways-scrolling box. The page itself no longer scrolls sideways at 390px (the broker table was 429px wide).
+- Top of every view: the paper-filing info box and its two expanders became one status caption, "**Coverage gap:** N paper filing(s) not imported (M member(s)). Details under About this data.", shown only when paper filings exist, plus one "About this data" expander (the bullets, the explanation and the missing-filings table).
+- CSS: expander headers and link buttons have a 44px minimum height.
+- Trade-off: on desktop, comparing brokers now needs a click, because the table sits in an expander.
+- Only `app.py` changed.
+- Verified: unit tests and `tests/ui_smoke.py` pass. `ui_check.py` run twice: all 1280 views PASS, no page-level scroll at 390px. AppTest for NVDA (USD and EUR), ETFs, a ticker with no price, an unknown id, an empty-trades database, and singular/plural caption cases (1 filing/1 member, 2/2, 0). Playwright: shared links and click-through from Top tickers work; the table expander causes no page scroll. Keyboard Tab reaches every expander header and link button with a visible focus ring. Light and dark screenshots show no breakage. Designer review first failed (tap targets 38/40px, table alternative lost, caption lead, plurals); all fixed and re-measured at 44px.
+- Not checked: the deployed app; Member and Committee views in a browser beyond the `ui_check.py` defaults; EUR and the Filed minimum basis in a browser (AppTest only); the sidebar open at 390px; combinations such as 2 filings from 1 member; a true full-page capture (Streamlit scrolls an inner container).
+- Seen, not fixed: in the broker table the Link column sits off to the right inside the scroller with no visual hint; the missing-filings links wrap to three lines at 390px; remaining small tap targets are Streamlit chrome (sidebar toggle 28x28, Deploy 57x28, Main menu 28x28, heading anchors 16x16) plus our "Refresh data from GitHub" button (26x480).
+
 ## Workflow commands and UI check
 - Three Claude Code slash commands in `.claude/commands/`:
   - `/ship`: runs the tests, checks the docs, commits and pushes on a branch. It stops before any PR or merge.
