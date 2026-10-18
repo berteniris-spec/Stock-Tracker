@@ -4,6 +4,7 @@ Run:  streamlit run app.py
 """
 import html
 import os
+import re
 import shutil
 import urllib.request
 
@@ -97,11 +98,21 @@ MONEY_COLS = ("est_volume", "amount_est", "amount_min", "amount_max")
 PRICE_COLS = ("price",)
 
 
-def show(df, key=None, ids=None, goto=None, download=None):
+def csv_button(raw, download):
+    """A plain-file alternative to the canvas grid (works with screen readers and spreadsheets)."""
+    st.download_button("Download as CSV (amounts in USD)", raw.to_csv(index=False).encode("utf-8"), file_name=f"{download}.csv",
+                       mime="text/csv", key=f"dl_{download}")
+
+
+def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name=None, desktop_only=False):
     """Table with $ and thousands separators; the underlying numbers stay numeric so sorting works.
 
     With key/ids/goto the rows are clickable: selecting a row jumps to view `goto` with that row's id
     (`ids` is aligned with `df`'s rows; `goto` is (view name, session-state key of that view's selectbox)).
+    With `name` and `phone_cols` the full table sits in a container that CSS hides at 640px and narrower, where a
+    second container shows `phone_cols` only, with a "Show all columns" checkbox (both are in the page at every
+    width, so resizing needs no rerun). With `name` and `desktop_only` the table is hidden at phone width and the
+    caller draws the phone rendering. An empty table is never swapped.
     """
     raw = df.copy()
     df = df.copy()
@@ -118,11 +129,24 @@ def show(df, key=None, ids=None, goto=None, download=None):
     fmt.update({c: "{:,.1f}" for c in ("pe", "forward_pe") if c in df.columns})
     fmt.update({c: "{:,.2f}" for c in ("peg",) if c in df.columns})
     kwargs = dict(on_select="rerun", selection_mode="single-row", key=key) if key else {}
-    event = st.dataframe(df.style.format(fmt, na_rep="") if fmt else df,
-                         hide_index=True, column_config=LABELS, use_container_width=True, **kwargs)
-    if download:       # a plain-file alternative to the canvas grid (works with screen readers and spreadsheets)
-        st.download_button("Download as CSV (amounts in USD)", raw.to_csv(index=False).encode("utf-8"), file_name=f"{download}.csv",
-                           mime="text/csv", key=f"dl_{download}")
+    styled = df.style.format(fmt, na_rep="") if fmt else df
+
+    def grid(**kw):
+        return st.dataframe(styled, hide_index=True, column_config=LABELS, use_container_width=True, **kw)
+
+    if name and not df.empty and (phone_cols or desktop_only):
+        with st.container(key=f"tbl_{name}"):
+            event = grid(**kwargs)
+        if phone_cols:
+            with st.container(key=f"ph_{name}"):
+                if st.checkbox("Show all columns", key=f"allcols_{name}"):
+                    grid()
+                else:
+                    grid(column_order=[c for c in phone_cols if c in df.columns])
+    else:
+        event = grid(**kwargs)
+    if download:
+        csv_button(raw, download)
     if key and ids is not None:
         rows = event.selection.rows
         if rows:
@@ -149,6 +173,54 @@ def vol_caption(vol, scope=""):
 
 def relevant_metric(col, df, sectors_known):
     col.metric("Committee-relevant", int(df["committee_relevant"].sum()) if sectors_known else "n/a")
+
+
+def md_esc(s):
+    """Escape text for a markdown label: dollar signs (esc) plus the characters that start emphasis, links or code."""
+    return esc(re.sub(r"([\\`*_\[\]])", r"\\\1", str(s)))
+
+
+def _open(view, select_key, ident):
+    """Button callback: the same hand-off as selecting a table row; the `_goto` pop below switches the view."""
+    st.session_state["_goto"] = (view, select_key, ident)
+
+
+def _has(x):
+    return x is not None and x == x and str(x).strip() != ""
+
+
+def n_trades(n):
+    return f"{int(n):,} trade{'s' if int(n) != 1 else ''}"
+
+
+def ranking(name, df, cols, ids, goto, noun, label, download=None):
+    """Overview ranking table. Wide screens: the selectable table plus its caption. Phone: a list of full-width buttons.
+
+    Both are in the page at every width and CSS shows one at Streamlit's 640px breakpoint (Python cannot see the
+    viewport). `label(row)` is the text after the rank, already markdown-escaped. Ranks 11 and up sit in an expander.
+    """
+    if df.empty:                                  # nothing to rank: just the empty table, no captions or list
+        show(df[cols], key=name, ids=ids, goto=goto, download=download)
+        return
+    with st.container(key=f"tbl_cap_{name}"):
+        st.caption(f"Tick the box at the start of a row to open that {noun}.")
+    with st.container(key=f"ph_cap_{name}"):
+        st.caption(f"Tap a row to open that {noun}.")
+    show(df[cols], key=name, ids=ids, goto=goto, name=name, desktop_only=True)
+    ids = list(ids)
+    with st.container(key=f"ph_{name}"):
+        slot = st.container()
+        for i, row in enumerate(df.itertuples()):
+            if i == 10:
+                slot = st.expander(f"Show ranks 11 to {len(df)}")
+            with slot:
+                text, args = f"{i + 1}. {label(row)}", dict(key=f"open_{name}_{i}", on_click=_open, args=(goto[0], goto[1], ids[i]))
+                try:
+                    st.button(text, icon=":material/chevron_right:", icon_position="right", **args)
+                except TypeError:                 # an older Streamlit without icon_position
+                    st.button(text, **args)
+    if download:
+        csv_button(df[cols], download)
 
 
 st.markdown("""
@@ -184,6 +256,22 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 @media (min-width: 641px) { .st-key-refresh button { max-width: 24rem; } }
 /* tap targets: buttons and each radio option (view switch, settings) at least 44px, wrapped rows spaced apart */
 [data-testid="stButton"] button, [data-testid="stDownloadButton"] button { min-height: 44px; }
+/* tables on a phone: each ranking / wide table has a desktop and a phone rendering in the page; CSS shows one at Streamlit's 640px breakpoint */
+@media (min-width: 641px) {
+  [class*="st-key-ph_"], [data-testid="stLayoutWrapper"]:has(> [class*="st-key-ph_"]) { display: none; }
+}
+@media (max-width: 640px) {
+  [class*="st-key-tbl_"], [data-testid="stLayoutWrapper"]:has(> [class*="st-key-tbl_"]) { display: none; }
+}
+/* ranking lists: full-width rows that wrap, left-aligned, 44px at least */
+[class*="st-key-ph_ov_"], [class*="st-key-ph_ov_"] [data-testid="stVerticalBlock"] { gap: .35rem; }
+[class*="st-key-open_ov_"], [class*="st-key-open_ov_"] [data-testid="stButton"], [class*="st-key-open_ov_"] button { width: 100%; }
+[class*="st-key-open_ov_"] button { justify-content: flex-start; text-align: left; height: auto; min-height: 44px; padding-top: .4rem; padding-bottom: .4rem; }
+[class*="st-key-open_ov_"] button, [class*="st-key-open_ov_"] button * { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+[class*="st-key-open_ov_"] button > div, [class*="st-key-open_ov_"] button > div > span { width: 100%; justify-content: space-between; }
+[class*="st-key-open_ov_"] [data-testid="stMarkdownContainer"] { flex: 1 1 auto; min-width: 0; }
+/* checkboxes: 44px rows ("Show all columns", "Only ...") */
+[data-testid="stCheckbox"] label { min-height: 44px; align-items: center; }
 label[data-testid="stRadioOption"] { min-height: 44px; align-items: center; }
 [data-testid="stRadioGroup"] { row-gap: .25rem; }
 </style>
@@ -277,18 +365,18 @@ if page == "Overview":
     k4.metric("Latest filing", newest_d.strftime("%d %b" if newest_d.year == pd.Timestamp.today().year else "%d %b %Y") if newest_d is not None else "n/a",
               help=f"Newest disclosure date in the data: {stats['newest']}" if stats["newest"] else None)
     vol_caption(stats["volume"], ", summed over all trades")
-    if True:
-        st.subheader("Most active members")
-        top_members = db.members_with_trades(con).head(25)
-        st.caption("Tick the box at the start of a row to open that member.")
-        show(top_members[["name", "party", "trades", "est_volume"]], key="ov_members",
-             ids=top_members["bioguide_id"], goto=("Member", "member_sel"))
-    if True:
-        st.subheader("Committees by trading volume")
-        top_committees = db.committees_with_trading(con).head(25)
-        st.caption("Tick the box at the start of a row to open that committee.")
-        show(top_committees[["name", "trades", "est_volume"]], key="ov_committees",
-             ids=top_committees["id"], goto=("Committee", "committee_sel"))
+    st.subheader("Most active members")
+    top_members = db.members_with_trades(con).head(25)
+    ranking("ov_members", top_members, ["name", "party", "trades", "est_volume"], top_members["bioguide_id"],
+            ("Member", "member_sel"), "member",
+            lambda r: " · ".join(x for x in (
+                md_esc(r.name) + (f" ({md_esc(r.party)})" if _has(r.party) else "") if _has(r.name) else "",
+                n_trades(r.trades), md_esc(short(r.est_volume))) if x))
+    st.subheader("Committees by trading volume")
+    top_committees = db.committees_with_trading(con).head(25)
+    ranking("ov_committees", top_committees, ["name", "trades", "est_volume"], top_committees["id"],
+            ("Committee", "committee_sel"), "committee",
+            lambda r: " · ".join(x for x in (md_esc(r.name) if _has(r.name) else "", n_trades(r.trades), md_esc(short(r.est_volume))) if x))
     st.subheader("Monthly estimated volume")
     mv = db.monthly_volume(con)
     if not mv.empty:
@@ -314,8 +402,10 @@ if page == "Overview":
                          hide_index=True, use_container_width=True)
     st.subheader("Top tickers")
     top_t = db.top_tickers(con, 20)
-    st.caption("Tick the box at the start of a row to open that ticker.")
-    show(top_t, key="ov_tickers", ids=top_t["ticker"], goto=("Ticker", "ticker_sel"), download="top_tickers")
+    ranking("ov_tickers", top_t, list(top_t.columns), top_t["ticker"], ("Ticker", "ticker_sel"), "ticker",
+            lambda r: " · ".join(x for x in (md_esc(r.ticker), md_esc(r.name) if _has(r.name) else "",
+                                             n_trades(r.trades), md_esc(short(r.est_volume))) if x),
+            download="top_tickers")
 
 elif page == "Member":
     members = db.members_with_trades(con)
@@ -352,7 +442,8 @@ elif page == "Member":
         show(mc[["name", "title", "as_of"]])
     st.subheader("Trades")
     only_rel = st.checkbox("Only committee-relevant (sector heuristic)")
-    show(tr[tr["committee_relevant"]] if only_rel else tr, download=f"trades_{bid}")
+    show(tr[tr["committee_relevant"]] if only_rel else tr, download=f"trades_{bid}",
+         phone_cols=["tx_date", "ticker", "tx_type", "amount_est"], name="member_trades")
 
 elif page == "Committee":
     ct = db.committees_with_trading(con)
@@ -379,9 +470,11 @@ elif page == "Committee":
     only_traders = st.checkbox("Only members with trades", value=True)
     if only_traders:
         cm = cm[cm["trades"] > 0]
-    show(cm[["name", "chamber", "party", "title", "trades", "est_volume"]])
+    show(cm[["name", "chamber", "party", "title", "trades", "est_volume"]],
+         phone_cols=["name", "party", "trades", "est_volume"], name="committee_members")
     st.subheader("Trades by members of this committee")
-    show(tr, download=f"committee_{cid}_trades")
+    show(tr, download=f"committee_{cid}_trades",
+         phone_cols=["member", "tx_date", "ticker", "tx_type", "amount_est"], name="committee_trades")
 
 else:
     tickers = db.all_tickers(con)
@@ -426,7 +519,7 @@ else:
     vol = db.volume_of(df)
     b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
     vol_caption(vol)
-    show(df, download=f"ticker_{t}_trades")
+    show(df, download=f"ticker_{t}_trades", phone_cols=["member", "tx_date", "tx_type", "amount_est"], name="ticker_trades")
 
     st.subheader("Where can I buy it from the Netherlands?")
     verdict, per = brokers.availability(prof["kind"], prof["exchange_code"])

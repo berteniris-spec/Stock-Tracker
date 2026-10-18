@@ -5,6 +5,7 @@ Needs streamlit installed and a congress.db in the repo root.   Run: python test
 Exit code 1 and ::error annotations when any view raises.
 """
 import random
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -62,6 +63,71 @@ def has_caption(at, text):
     return any(text in str(c.value) for c in at.caption)
 
 
+def overview_rows():
+    """(button key prefix, view, select key, expected ids, expected names) of the three Overview lists, from the database.
+
+    Computed right after a run: the volume basis (a module-level setting in db, set by the app) decides the order.
+    """
+    import db
+    c = db.connect()
+    m = db.members_with_trades(c).head(25)
+    cm = db.committees_with_trading(c).head(25)
+    t = db.top_tickers(c, 20)
+    return (("open_ov_members_", "Member", "member_sel", list(m["bioguide_id"]), list(m["name"])),
+            ("open_ov_committees_", "Committee", "committee_sel", list(cm["id"]), list(cm["name"])),
+            ("open_ov_tickers_", "Ticker", "ticker_sel", list(t["ticker"]), list(t["ticker"])))
+
+
+def open_buttons(at, prefix):
+    return {b.key: b for b in at.button if (b.key or "").startswith(prefix)}
+
+
+def check_open_buttons(at, label):
+    """The phone lists: one button per ranking row (25, tickers 20, or fewer), rank first, name in the label, every $ escaped."""
+    for prefix, view, _, ids, names in overview_rows():
+        found = open_buttons(at, prefix)
+        bad = []
+        if len(found) != len(ids):
+            bad.append(f"{len(found)} buttons, expected {len(ids)}")
+        for i, name in enumerate(names):
+            b = found.get(f"{prefix}{i}")
+            if b is None:
+                continue
+            text = str(b.label)
+            if not text.startswith(f"{i + 1}. ") or str(name).replace("\\", "") not in text.replace("\\", ""):
+                bad.append(f"row {i}: {text!r}")
+            if re.search(r"(?<!\\)\$", text):
+                bad.append(f"row {i}: unescaped $ in {text!r}")
+        if bad:
+            failures.append(f"{label} {prefix}")
+            print(f"::error title=UI smoke: {label} {prefix}::{'; '.join(bad[:3])}")
+        else:
+            print("ok", label, f"{len(found)} {prefix}* buttons")
+
+
+def check_click_through(currency):
+    """Tapping a list row opens that member / committee / ticker: view, selectbox and URL all follow (rank 1 and rank 11)."""
+    for prefix, view, sel, _, _ in overview_rows():
+        for i in (0, 10):
+            at = fresh()
+            if currency != "USD":
+                at.radio(key="currency").set_value(currency).run()
+            _, _, _, ids, _ = next(r for r in overview_rows() if r[0] == prefix)
+            if i >= len(ids):
+                print(f"note: {prefix} has only {len(ids)} rows; row {i} not clicked")
+                continue
+            at.button(key=f"{prefix}{i}").click().run()
+            qp = at.query_params
+            ok = (not at.exception and at.radio(key="page").value == view and at.selectbox(key=sel).value == ids[i]
+                  and qp.get("view") == view and qp.get("id") == str(ids[i]))
+            if not ok:
+                failures.append(f"click {prefix}{i} {currency}")
+                print(f"::error title=UI smoke: click {prefix}{i} {currency}::page={at.radio(key='page').value} "
+                      f"{sel}={at.selectbox(key=sel).value if at.selectbox(key=sel) else None} want {view}/{ids[i]}; query {dict(qp)}")
+            else:
+                print("ok", f"click {prefix}{i} in {currency} opens {view} {ids[i]}")
+
+
 def fresh():
     at = AppTest.from_file(APP, default_timeout=90)
     at.run()
@@ -84,6 +150,7 @@ def main():
     check_metrics(at, "Overview")
     check_vol_label(at, "Overview")
     check_vol_caption(at, "Overview")
+    check_open_buttons(at, "Overview")
     lf = [m.value for m in at.metric if m.label == "Latest filing"]
     if lf and (lf[0] == "n/a" or len(lf[0].split()) in (2, 3)):
         print("ok Latest filing", lf[0])
@@ -108,6 +175,10 @@ def main():
             check(at, f"Overview with {label}={opt}")
             check_metrics(at, f"Overview with {label}={opt}")
             check_vol_label(at, f"Overview with {label}={opt}")
+            check_open_buttons(at, f"Overview with {label}={opt}")
+
+    for currency in ("USD", "EUR"):
+        check_click_through(currency)
 
     # settings survive a view change
     at = fresh()
