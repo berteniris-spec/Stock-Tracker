@@ -314,6 +314,8 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 @media (max-width: 640px) and (prefers-color-scheme: dark) { [class*="st-key-ph_"] td { border-color: rgba(239,236,227,.2) !important; } }
 /* 320px: five columns need tighter cell padding to fit without breaking words */
 @media (max-width: 359px) { [class*="st-key-ph_"] th, [class*="st-key-ph_"] td { padding-left: .1rem !important; padding-right: .1rem !important; } }
+/* 320px safety net: a table that is still too wide scrolls inside its own box (visible overflow stays at 360-640 so it shows up as a failure) */
+@media (max-width: 359px) { [class*="st-key-ph_"] [data-testid="stTable"] > div { overflow-x: auto; } }
 /* list rows: the boundary is ink at 55% (the rule colour was about 1.5:1) */
 [class*="st-key-open_ov_"] button { border-color: rgba(0,0,0,.55); }
 /* keyboard focus: the same ring as the radios on buttons and checkboxes (Streamlit's own glow is about 1.9:1) */
