@@ -104,14 +104,45 @@ def csv_button(raw, download):
                        mime="text/csv", key=f"dl_{download}")
 
 
+PHONE_ROWS = 25
+
+
+def phone_table(df, cols, fmt):
+    """Compact phone table: `cols` of the first PHONE_ROWS rows as a real HTML table, so long text wraps instead of clipping.
+
+    `df` is already converted to the display currency and `fmt` is show()'s number format. st.table ignores column_config,
+    so the headers come from LABELS. Callers pass trades newest first and members by volume, so the cap keeps the top rows.
+    """
+    cols = [c for c in cols if c in df.columns]
+    label = {c: (LABELS.get(c) if isinstance(LABELS.get(c), str) else (LABELS.get(c) or {}).get("label")) or c for c in cols}
+    view = df[cols].head(PHONE_ROWS).rename(columns=label)
+
+    def cell(v, f=None):              # st.table renders each cell as markdown, so escape $ * _ and the like
+        return "" if pd.isna(v) else md_esc(f.format(v) if f else v)
+
+    styled = view.style.format({label[c]: (lambda v, f=fmt.get(c): cell(v, f)) for c in cols}).hide(axis="index")
+    numeric = [label[c] for c in cols if pd.api.types.is_numeric_dtype(df[c])]
+    if numeric:
+        styled = styled.set_properties(subset=numeric, **{"text-align": "right"})
+    keep = [label[c] for c in cols if c == "ticker" or label[c] in numeric]    # tickers and amounts stay whole; names and types wrap
+    if keep:
+        styled = styled.set_properties(subset=keep, **{"white-space": "nowrap"})
+    if "tx_date" in cols:             # whole dates, except below 360px (see --date-ws in the style block) where five columns cannot fit
+        styled = styled.set_properties(subset=[label["tx_date"]], **{"white-space": "var(--date-ws, nowrap)"})
+    st.table(styled)
+    if len(df) > PHONE_ROWS:
+        st.caption(f"Showing the {'newest' if 'tx_date' in cols else 'top'} {PHONE_ROWS} of {len(df):,}. Tick Show all columns for everything.")
+
+
 def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name=None, desktop_only=False):
     """Table with $ and thousands separators; the underlying numbers stay numeric so sorting works.
 
     With key/ids/goto the rows are clickable: selecting a row jumps to view `goto` with that row's id
     (`ids` is aligned with `df`'s rows; `goto` is (view name, session-state key of that view's selectbox)).
     With `name` and `phone_cols` the full table sits in a container that CSS hides at 640px and narrower, where a
-    second container shows `phone_cols` only, with a "Show all columns" checkbox (both are in the page at every
-    width, so resizing needs no rerun). With `name` and `desktop_only` the table is hidden at phone width and the
+    second container shows `phone_cols` only as a wrapping st.table of the first 25 rows (canvas columns cannot
+    wrap and clipped at 358px), with a "Show all columns" checkbox that switches to the full grid (both containers
+    are in the page at every width, so resizing needs no rerun). With `name` and `desktop_only` the table is hidden at phone width and the
     caller draws the phone rendering. An empty table is never swapped.
     """
     raw = df.copy()
@@ -142,7 +173,7 @@ def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name
                 if st.checkbox("Show all columns", key=f"allcols_{name}"):
                     grid()
                 else:
-                    grid(column_order=[c for c in phone_cols if c in df.columns])
+                    phone_table(df, phone_cols, fmt)
     else:
         event = grid(**kwargs)
     if download:
@@ -262,6 +293,13 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 }
 @media (max-width: 640px) {
   [class*="st-key-tbl_"], [data-testid="stLayoutWrapper"]:has(> [class*="st-key-tbl_"]) { display: none; }
+  /* compact phone tables: the table wraps to the container width; no sideways scroll, so a too-wide table shows up as page overflow */
+  [class*="st-key-ph_"] [data-testid="stTable"] > div { overflow-x: visible; }
+  [class*="st-key-ph_"] table { width: 100%; table-layout: auto; font-size: .85rem; }
+  [class*="st-key-ph_"] th, [class*="st-key-ph_"] td { padding: .35rem .3rem !important; white-space: normal; }
+  [class*="st-key-ph_"] th *, [class*="st-key-ph_"] td * { overflow-wrap: anywhere !important; }
+  [class*="st-key-ph_"] td * { white-space: inherit !important; }        /* so the per-column nowrap set on the td applies */
+  [class*="st-key-ph_"] th { text-align: left; font-weight: 600; color: inherit; border-bottom: 2px solid currentColor; }
 }
 /* ranking lists: full-width rows that wrap, left-aligned, 44px at least */
 [class*="st-key-ph_ov_"], [class*="st-key-ph_ov_"] [data-testid="stVerticalBlock"] { gap: .35rem; }
@@ -270,6 +308,7 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 [class*="st-key-open_ov_"] button, [class*="st-key-open_ov_"] button * { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 [class*="st-key-open_ov_"] button > div, [class*="st-key-open_ov_"] button > div > span { width: 100%; justify-content: space-between; }
 [class*="st-key-open_ov_"] [data-testid="stMarkdownContainer"] { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 359px) { [class*="st-key-ph_"] { --date-ws: normal; } }
 /* checkboxes: 44px rows ("Show all columns", "Only ...") */
 [data-testid="stCheckbox"] label { min-height: 44px; align-items: center; }
 label[data-testid="stRadioOption"] { min-height: 44px; align-items: center; }

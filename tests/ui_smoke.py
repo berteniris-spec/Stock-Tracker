@@ -59,6 +59,15 @@ def check_vol_caption(at, label):
         print("ok", label, "volume caption")
 
 
+def check_compact_table(at, label):
+    """The phone rendering of the trade tables is a real st.table (it wraps; canvas columns clipped at 390px)."""
+    if len(at.table) and all(len(t.value) <= 25 for t in at.table):
+        print("ok", label, f"{len(at.table)} compact table(s), at most 25 rows each")
+    else:
+        failures.append(f"{label} compact table")
+        print(f"::error title=UI smoke: {label} compact table::expected st.table(s) of at most 25 rows, got {[len(t.value) for t in at.table]}")
+
+
 def has_caption(at, text):
     return any(text in str(c.value) for c in at.caption)
 
@@ -203,6 +212,7 @@ def main():
         check_metrics(at, f"{page} default")
         check_vol_label(at, f"{page} default")
         check_vol_caption(at, f"{page} default")
+        check_compact_table(at, f"{page} default")
         at.radio(key="basis").set_value("Filed minimum").run()
         check_metrics(at, f"{page} Filed minimum")
         check_vol_label(at, f"{page} Filed minimum")
