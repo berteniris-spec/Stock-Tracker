@@ -124,14 +124,14 @@ def phone_table(df, cols, fmt):
     numeric = [label[c] for c in cols if pd.api.types.is_numeric_dtype(df[c])]
     if numeric:
         styled = styled.set_properties(subset=numeric, **{"text-align": "right"})
-    keep = [label[c] for c in cols if c == "ticker" or label[c] in numeric]    # tickers and amounts stay whole; names and types wrap
+    keep = [label[c] for c in cols if c in ("tx_date", "ticker", "party") or label[c] in numeric]   # dates, tickers, parties and amounts never break; names and types wrap at spaces
     if keep:
         styled = styled.set_properties(subset=keep, **{"white-space": "nowrap"})
-    if "tx_date" in cols:             # whole dates, except below 360px (see --date-ws in the style block) where five columns cannot fit
-        styled = styled.set_properties(subset=[label["tx_date"]], **{"white-space": "var(--date-ws, nowrap)"})
     st.table(styled)
     if len(df) > PHONE_ROWS:
-        st.caption(f"Showing the {'newest' if 'tx_date' in cols else 'top'} {PHONE_ROWS} of {len(df):,}. Tick Show all columns for everything.")
+        trades = "tx_date" in cols
+        st.caption(f"Showing the {'newest' if trades else 'top'} {PHONE_ROWS} of {len(df):,} {'trades' if trades else 'members'}. "
+                   "Tick Show all columns above for every column and row.")
 
 
 def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name=None, desktop_only=False):
@@ -172,6 +172,7 @@ def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name
             with st.container(key=f"ph_{name}"):
                 if st.checkbox("Show all columns", key=f"allcols_{name}"):
                     grid()
+                    st.caption("Scroll sideways inside the table to see more columns.")
                 else:
                     phone_table(df, phone_cols, fmt)
     else:
@@ -236,7 +237,8 @@ def ranking(name, df, cols, ids, goto, noun, label, download=None):
     with st.container(key=f"tbl_cap_{name}"):
         st.caption(f"Tick the box at the start of a row to open that {noun}.")
     with st.container(key=f"ph_cap_{name}"):
-        st.caption(f"Tap a row to open that {noun}.")
+        st.caption(f"Tap a row to open that {noun}. Volumes are estimated from "
+                   f"{'the lowest figure' if vol_label == 'Min. volume' else 'the midpoint'} of each filed range.")
     show(df[cols], key=name, ids=ids, goto=goto, name=name, desktop_only=True)
     ids = list(ids)
     with st.container(key=f"ph_{name}"):
@@ -297,8 +299,9 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
   [class*="st-key-ph_"] [data-testid="stTable"] > div { overflow-x: visible; }
   [class*="st-key-ph_"] table { width: 100%; table-layout: auto; font-size: .85rem; }
   [class*="st-key-ph_"] th, [class*="st-key-ph_"] td { padding: .35rem .3rem !important; white-space: normal; }
-  [class*="st-key-ph_"] th *, [class*="st-key-ph_"] td * { overflow-wrap: anywhere !important; }
+  [class*="st-key-ph_"] th *, [class*="st-key-ph_"] td * { overflow-wrap: break-word !important; }
   [class*="st-key-ph_"] td * { white-space: inherit !important; }        /* so the per-column nowrap set on the td applies */
+  [class*="st-key-ph_"] td { border-color: rgba(0,0,0,.2) !important; }
   [class*="st-key-ph_"] th { text-align: left; font-weight: 600; color: inherit; border-bottom: 2px solid currentColor; }
 }
 /* ranking lists: full-width rows that wrap, left-aligned, 44px at least */
@@ -308,7 +311,19 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 [class*="st-key-open_ov_"] button, [class*="st-key-open_ov_"] button * { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 [class*="st-key-open_ov_"] button > div, [class*="st-key-open_ov_"] button > div > span { width: 100%; justify-content: space-between; }
 [class*="st-key-open_ov_"] [data-testid="stMarkdownContainer"] { flex: 1 1 auto; min-width: 0; }
-@media (max-width: 359px) { [class*="st-key-ph_"] { --date-ws: normal; } }
+@media (max-width: 640px) and (prefers-color-scheme: dark) { [class*="st-key-ph_"] td { border-color: rgba(239,236,227,.2) !important; } }
+/* 320px: five columns need tighter cell padding to fit without breaking words */
+@media (max-width: 359px) { [class*="st-key-ph_"] th, [class*="st-key-ph_"] td { padding-left: .1rem !important; padding-right: .1rem !important; } }
+/* list rows: the boundary is ink at 55% (the rule colour was about 1.5:1) */
+[class*="st-key-open_ov_"] button { border-color: rgba(0,0,0,.55); }
+/* keyboard focus: the same ring as the radios on buttons and checkboxes (Streamlit's own glow is about 1.9:1) */
+[data-testid="stButton"] button:focus-visible, [data-testid="stDownloadButton"] button:focus-visible,
+[data-testid="stCheckbox"] label:has(input:focus-visible) { outline: 2px solid #4a70a9; outline-offset: 2px; }
+@media (prefers-color-scheme: dark) {
+  [class*="st-key-open_ov_"] button { border-color: rgba(239,236,227,.55); }
+  [data-testid="stButton"] button:focus-visible, [data-testid="stDownloadButton"] button:focus-visible,
+  [data-testid="stCheckbox"] label:has(input:focus-visible) { outline-color: #8fabd4; }
+}
 /* checkboxes: 44px rows ("Show all columns", "Only ...") */
 [data-testid="stCheckbox"] label { min-height: 44px; align-items: center; }
 label[data-testid="stRadioOption"] { min-height: 44px; align-items: center; }
@@ -369,6 +384,7 @@ if refresh:
         err_slot.error(f"Refresh failed: {e}")
 db.set_basis("min" if basis == "Filed minimum" else "mid")
 vol_label = "Min. volume" if basis == "Filed minimum" else "Est. volume"          # metric label (18 characters at most)
+LABELS["est_volume"] = st.column_config.NumberColumn(vol_label)       # grid and compact-table header follow the basis
 vol_full = "Volume (filed minimum)" if basis == "Filed minimum" else "Est. volume (midpoint)"   # full basis name for tooltips
 
 if db.has_sample_data(con):
@@ -408,14 +424,14 @@ if page == "Overview":
     top_members = db.members_with_trades(con).head(25)
     ranking("ov_members", top_members, ["name", "party", "trades", "est_volume"], top_members["bioguide_id"],
             ("Member", "member_sel"), "member",
-            lambda r: " · ".join(x for x in (
+            lambda r: "\u00a0· ".join(x for x in (
                 md_esc(r.name) + (f" ({md_esc(r.party)})" if _has(r.party) else "") if _has(r.name) else "",
                 n_trades(r.trades), md_esc(short(r.est_volume))) if x))
     st.subheader("Committees by trading volume")
     top_committees = db.committees_with_trading(con).head(25)
     ranking("ov_committees", top_committees, ["name", "trades", "est_volume"], top_committees["id"],
             ("Committee", "committee_sel"), "committee",
-            lambda r: " · ".join(x for x in (md_esc(r.name) if _has(r.name) else "", n_trades(r.trades), md_esc(short(r.est_volume))) if x))
+            lambda r: "\u00a0· ".join(x for x in (md_esc(r.name) if _has(r.name) else "", n_trades(r.trades), md_esc(short(r.est_volume))) if x))
     st.subheader("Monthly estimated volume")
     mv = db.monthly_volume(con)
     if not mv.empty:
@@ -442,7 +458,7 @@ if page == "Overview":
     st.subheader("Top tickers")
     top_t = db.top_tickers(con, 20)
     ranking("ov_tickers", top_t, list(top_t.columns), top_t["ticker"], ("Ticker", "ticker_sel"), "ticker",
-            lambda r: " · ".join(x for x in (md_esc(r.ticker), md_esc(r.name) if _has(r.name) else "",
+            lambda r: "\u00a0· ".join(x for x in (md_esc(r.ticker), md_esc(r.name) if _has(r.name) else "",
                                              n_trades(r.trades), md_esc(short(r.est_volume))) if x),
             download="top_tickers")
 

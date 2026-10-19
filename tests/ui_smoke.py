@@ -60,6 +60,21 @@ def check_vol_caption(at, label):
 
 
 def check_compact_table(at, label):
+    """Compact tables: at most 25 rows; the volume header follows the basis; a truncated table says so under itself."""
+    check_compact_table_rows(at, label)
+    if "Committee" in label:
+        vol = "Min. volume" if at.radio(key="basis").value == "Filed minimum" else "Est. volume"
+        if not any(vol in list(t.value.columns) for t in at.table):
+            failures.append(f"{label} volume header")
+            print(f"::error title=UI smoke: {label} volume header::no compact table with a {vol!r} column")
+        long = [len(t.value) for t in at.table if len(t.value) == 25]
+        shown = any(str(c.value).startswith("Showing the") and "Tick Show all columns above for every column and row." in str(c.value) for c in at.caption)
+        if bool(long) and not shown:
+            failures.append(f"{label} truncation caption")
+            print(f"::error title=UI smoke: {label} truncation caption::a table is capped at 25 rows but no 'Showing the ...' caption")
+
+
+def check_compact_table_rows(at, label):
     """The phone rendering of the trade tables is a real st.table (it wraps; canvas columns clipped at 390px)."""
     if len(at.table) and all(len(t.value) <= 25 for t in at.table):
         print("ok", label, f"{len(at.table)} compact table(s), at most 25 rows each")
@@ -107,6 +122,13 @@ def check_open_buttons(at, label):
                 bad.append(f"row {i}: {text!r}")
             if re.search(r"(?<!\\)\$", text):
                 bad.append(f"row {i}: unescaped $ in {text!r}")
+        noun = view.lower()
+        want = ("Tap a row to open that %s. Volumes are estimated from %s of each filed range."
+                % (noun, "the lowest figure" if at.radio(key="basis").value == "Filed minimum" else "the midpoint"))
+        if not has_caption(at, want):
+            bad.append(f"phone caption {want!r} missing")
+        if any(" \u00b7 " in str(b.label) or "\u00a0\u00b7" not in str(b.label) for b in found.values()):
+            bad.append("separator is not attached to the previous part by U+00A0")
         if bad:
             failures.append(f"{label} {prefix}")
             print(f"::error title=UI smoke: {label} {prefix}::{'; '.join(bad[:3])}")
