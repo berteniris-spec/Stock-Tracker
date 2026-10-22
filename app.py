@@ -38,7 +38,7 @@ if not db.DB_PATH.exists():  # first start on a fresh host: fetch the published 
     try:
         download_db()
     except Exception as e:
-        st.error(f"No local database and the published one could not be fetched ({e}). "
+        st.error(f"**Database unavailable:** no local database and the published one could not be fetched ({e}). "
                  "Run `python ingest_committees.py` and `python house_importer.py` locally, or set DB_URL.")
         st.stop()
 
@@ -269,9 +269,12 @@ st.markdown("""
 label[data-testid="stRadioOption"]:not([data-selected="true"]) > div > div:first-child { border-color: rgba(0,0,0,.55) !important; }
 /* radio: visible keyboard focus */
 label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; outline-offset: 2px; }
+/* links: primary is 4.25:1 on cream, too low for small text; link is 5.1:1 */
+[data-testid="stMarkdownContainer"] a { color: #3f6399; }
 @media (prefers-color-scheme: dark) {
   label[data-testid="stRadioOption"]:not([data-selected="true"]) > div > div:first-child { border-color: rgba(239,236,227,.55) !important; }
   label[data-testid="stRadioOption"]:focus-within { outline-color: #8fabd4; }
+  [data-testid="stMarkdownContainer"] a { color: #8fabd4; }
 }
 /* metric values wrap at spaces instead of being cut off with an ellipsis ("NYSE American", "ETF / fund") */
 [data-testid="stMetric"] [data-testid="stMetricValue"] * { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; }
@@ -383,7 +386,7 @@ if refresh:
         download_db()
         st.rerun()
     except Exception as e:
-        err_slot.error(f"Refresh failed: {e}")
+        err_slot.error(f"**Refresh failed:** {e}")
 db.set_basis("min" if basis == "Filed minimum" else "mid")
 vol_label = "Min. volume" if basis == "Filed minimum" else "Est. volume"          # metric label (18 characters at most)
 LABELS["est_volume"] = st.column_config.NumberColumn(vol_label)       # grid and compact-table header follow the basis
@@ -442,8 +445,13 @@ if page == "Overview":
         cur = "EUR" if CURRENCY == "EUR" and RATE else "USD"
         types = ["Purchase", "Sale", "Sale (Partial)", "Exchange"]
         palette = ["#0072B2", "#D55E00", "#E69F00", "#7F7F7F"]      # colour-blind-safe (Okabe-Ito) hues
+        try:
+            is_light = st.context.theme.type != "dark"
+        except Exception:
+            is_light = True
+        bar_outline = {"stroke": "rgba(0,0,0,0.6)", "strokeWidth": 1} if is_light else {}   # chart-partial is only 1.9:1 on cream
         chart = (alt.Chart(mv, title=f"Estimated trade volume per month ({cur}, by trade date)")
-                 .mark_bar()
+                 .mark_bar(**bar_outline)
                  .encode(x=alt.X("month:O", title="Month", axis=alt.Axis(labelAngle=-45, labelOverlap="parity")),
                          y=alt.Y("est_volume:Q", title=f"Estimated volume ({cur})", axis=alt.Axis(format="~s")),
                          color=alt.Color("tx_type:N", title="Type", scale=alt.Scale(domain=types, range=palette)),
