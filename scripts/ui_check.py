@@ -9,7 +9,9 @@ and the playwright version must match the installed chromium build.
 Limit: only the default state is captured (USD, default volume basis). The Settings expander is not
 opened, and EUR and the Filed minimum basis are not captured. A sidebar or its toggle still in the
 page is reported as an advisory line and never changes the exit code.
-Exit codes: 0 clean, 1 page-level overflow or did not finish loading, 2 environment problem.
+Overview only: at 390 every ranking list button must be 44px tall and inside the viewport and no ranking table may
+show; at 1280 the ranking tables show and the lists do not. A failure there exits 1 like page-level overflow.
+Exit codes: 0 clean, 1 page-level overflow, a ranking failure or did not finish loading, 2 environment problem.
 """
 import argparse
 import os
@@ -88,6 +90,51 @@ JS = r"""
   return {pageScroll: !!pageScroll, overflow: uniq(overflow), cut: uniq(cut), small: uniq(small), sidebar: document.querySelectorAll('[data-testid="stSidebar"], [data-testid="stExpandSidebarButton"], [data-testid="stSidebarCollapsedControl"]').length > 0, widest: widest, vw: vw};
 }
 """
+
+
+# Overview only: the three ranking tables have a table rendering (desktop) and a list of buttons (phone), and CSS shows one.
+RANK_JS = r"""
+() => {
+  const vw = document.documentElement.clientWidth;
+  const shown = (el) => { const r = el.getBoundingClientRect(); return el.checkVisibility({checkVisibilityCSS: true}) && r.width > 0 && r.height > 0; };
+  const label = (el) => (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+  const buttons = [...document.querySelectorAll('[class*="st-key-open_ov"] button')];
+  const list = buttons.filter(shown);
+  const grids = [...document.querySelectorAll('[class*="st-key-tbl_ov_"] [data-testid="stDataFrame"]')];
+  return {
+    buttons: buttons.length, listShown: list.length, grids: grids.length, gridsShown: grids.filter(shown).length,
+    short: list.filter((b) => b.getBoundingClientRect().height < 43.5).map((b) => label(b) + ' ' + Math.round(b.getBoundingClientRect().height) + 'px'),
+    outside: list.filter((b) => { const r = b.getBoundingClientRect(); return r.left < -1 || r.right > vw + 1; }).map(label),
+  };
+}
+"""
+
+
+def ranking_findings(page, width):
+    """Problems with the Overview ranking tables at this width (empty list = fine)."""
+    if width <= 640:  # open the "Show ranks 11 to N" expanders so those rows are measured too
+        for summary in page.query_selector_all('[class*="st-key-ph_ov_"] summary'):
+            summary.click()
+        page.wait_for_timeout(500)
+    r = page.evaluate(RANK_JS)
+    if not r["grids"]:  # empty ranking tables: no list and nothing to swap
+        return []
+    out = []
+    if width <= 640:
+        if not r["buttons"]:
+            out.append("no list buttons")
+        if r["short"]:
+            out.append(f"{len(r['short'])} list buttons under 44px: " + "; ".join(r["short"][:3]))
+        if r["outside"]:
+            out.append("list buttons outside the viewport: " + "; ".join(r["outside"][:3]))
+        if r["gridsShown"]:
+            out.append(f"{r['gridsShown']} ranking tables still visible")
+    else:
+        if r["gridsShown"] != r["grids"]:
+            out.append(f"only {r['gridsShown']} of {r['grids']} ranking tables visible")
+        if r["listShown"]:
+            out.append(f"{r['listShown']} list buttons visible")
+    return out
 
 
 def free_port():
@@ -261,6 +308,7 @@ def shoot(browser, url, view, width, theme, out):
         path = out / f"{view.lower()}_{width}_{theme}.png"
         page.screenshot(path=str(path), full_page=True)
         r = page.evaluate(JS)
+        rank = ranking_findings(page, width) if view == "Overview" else []
         if page.query_selector(SKELETON) or not page.evaluate(HAS_CONTENT):  # loading restarted or content vanished
             print(f"{view} {width} {theme}: ISSUES did not finish loading")
             return True
@@ -285,10 +333,12 @@ def shoot(browser, url, view, width, theme, out):
     if width == 390 and r["small"]:
         parts.append(f"advisory, {len(r['small'])} targets under 44x44: "
                      + "; ".join(r["small"][:5]))
+    if rank:
+        parts.append("ranking tables: " + "; ".join(rank))
     if r["sidebar"]:
         parts.append("advisory, sidebar or toggle still present")
     print(f"{view} {width} {theme}: {'ISSUES ' + ' | '.join(parts) if parts else 'PASS'}  {path}")
-    return bool(r["pageScroll"])
+    return bool(r["pageScroll"]) or bool(rank)
 
 
 if __name__ == "__main__":

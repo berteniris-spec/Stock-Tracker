@@ -5,9 +5,13 @@ primaryColor = "#4a70a9"
 backgroundColor = "#efece3"
 secondaryBackgroundColor = "#8fabd4"
 textColor = "#000000"
+greenColor = "#005f99"   # delta-up: blue, not green
+redColor = "#a03500"     # delta-down: vermillion
 
 [theme.dark]
 primaryColor = "#8fabd4"
 backgroundColor = "#0d1219"
 secondaryBackgroundColor = "#1c2a3f"
 textColor = "#efece3"
+greenColor = "#56b4e9"
+redColor = "#ff8f5a"

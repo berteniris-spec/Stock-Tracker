@@ -42,7 +42,7 @@ def main():
     if any(f.endswith(".py") for f in files):
         try:
             r = subprocess.run(
-                ["bash", "-c", 'for t in tests/test_*.py; do python "$t" || exit 1; done'],
+                ["bash", "-c", 'PY=python; [ -x .venv/bin/python ] && PY=.venv/bin/python; for t in tests/test_*.py; do "$PY" "$t" || exit 1; done'],
                 cwd=root, capture_output=True, text=True, timeout=120)
             if r.returncode != 0:
                 out = (r.stdout + r.stderr).strip().splitlines()[-40:]
