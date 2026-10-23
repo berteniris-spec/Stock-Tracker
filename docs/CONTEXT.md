@@ -1,6 +1,6 @@
 # Project context
 
-Read this first after a session clear. Keep it short and true; the Documenter refreshes it after every change. Last updated: 2026-10-19.
+Read this first after a session clear. Keep it short and true; the Documenter refreshes it after every change. Last updated: 2026-10-23.
 
 ## What this is
 Congress trades: a personal Streamlit dashboard that joins US congressional stock trades to committee membership and estimated volume. SQLite database, runs locally or on Streamlit Community Cloud from the `main` branch. Public repo, no secrets. Keep use non-commercial.
@@ -16,18 +16,19 @@ Roles and the loop are in `AGENTS.md` (Planner, Builder, Designer, Tester, Docum
 
 Slash commands (`.claude/commands/`): `/ship` (tests, doc check, commit and push on a branch; stops before PR or merge), `/resume` (read-only summary of context, branch, open PRs, next step), `/ui-check` (runs the script below, reads a few screenshots, fixes nothing).
 
-`scripts/ui_check.py`: starts the app headless and screenshots Overview, Member, Committee and Ticker at 390px and 1280px, light and dark, with Playwright and the preinstalled Chromium. Reports page-level sideways scroll (names the widest element), overflowing elements, cut-off text suspects and, at 390 only, tap targets under 44px (advisory). Exit 0 clean, 1 page-level overflow or load failure, 2 environment problem. Playwright is not a repo dependency: the interpreter must import `playwright` and `streamlit`, and the Playwright version must match the Chromium build (1.56.0 for chromium-1194).
+`scripts/ui_check.py`: starts the app headless and screenshots Overview, Member, Committee and Ticker at 390px and 1280px, light and dark, with Playwright and the preinstalled Chromium. Reports page-level sideways scroll (names the widest element), overflowing elements, cut-off text suspects and, at 390 only, tap targets under 44px (advisory). Exit 0 clean, 1 page-level overflow or load failure, 2 environment problem. Playwright is not a repo dependency: the interpreter must import `playwright` and `streamlit` (the local `.venv` has Streamlit 1.66.1 and Playwright 1.64.0; the global anaconda Python has an old Streamlit that fails on numpy 2), and the Playwright version must match the Chromium build (1.56.0 for chromium-1194; 1.64.x ran with chromium-1248 via `PLAYWRIGHT_BROWSERS_PATH`).
 
 Permissions in `.claude/settings.json` (applies to everyone using Claude Code here): allow read-only git, `ls`, `python tests/test_*.py`, `python tests/ui_smoke.py`, Read, Glob, Grep; ask for `git add`, `commit`, `push`; deny `rm`, `mv`, `curl`, `wget`.
 
 `CLAUDE.md` points Claude Code to `AGENTS.md` and this file. Hooks in `.claude/settings.json` (scripts in `.claude/hooks/`):
 - `session_start.sh`: cloud sessions only; installs requirements plus reportlab, fetches `congress.db` from the `data` branch if missing or over 12 hours old, prints the top of this file. Never fails the session.
 - `guard_paths.py`: asks before edits to `congress.db`, `.github/workflows/`, `.streamlit/config.toml`; best-effort Bash check.
-- `on_stop.py`: runs unit tests when a `.py` file changed and blocks the stop on failure; warns when code changed without a CHANGELOG entry.
+- `on_stop.py`: runs unit tests (with `.venv/bin/python` when it exists) when a `.py` file changed and blocks the stop on failure; warns when code changed without a CHANGELOG entry.
 
 ## Design
 - Design system: https://claude.ai/artifact/FKb1gTaSePVdEYWRPffmuA (private; tokens, README, components Metric, Notice, DataTable, VolumeChart).
 - Theme in `.streamlit/config.toml`, from Color Hunt: cream `#efece3`, blue `#8fabd4`, deep blue `#4a70a9`, black. A dark theme is derived. Deep blue is 4.3:1 on cream: controls and large text only.
+- Design system v2 is applied (PR #9, merged 2026-10-23): delta chips use `greenColor`/`redColor` in `.streamlit/config.toml` (light up `#005f99` blue, down `#a03500`; dark `#56b4e9`, `#ff8f5a`), markdown links are `#3f6399` light (5.1:1) and `#8fabd4` dark, light-theme bars get a 1px outline (the partial-sale colour is only 1.9:1 on cream), and the "Database unavailable" and "Refresh failed" errors lead with a bold cause.
 - Chart series use the colour-blind-safe Okabe-Ito colours, not the palette.
 - Copy: plain-language headers, sentence case, `n/a` in metrics and blank in tables for missing values, compact headline amounts (`$102M`) with exact figures in tooltips and, for volume, in a visible caption.
 
@@ -54,19 +55,19 @@ Permissions in `.claude/settings.json` (applies to everyone using Claude Code he
 - Permissions: routine read-only and test commands need no prompt; anything that records or publishes (`git add/commit/push`) asks; destructive or network shell tools are denied.
 
 ## Open work
-- Mobile and readability pass, on branch `claude/mobile-pass-1` (uncommitted when written). Re-run `/ui-check` after each step.
+- Mobile and readability pass. Steps 1-4 and design system v2 are merged to `main` (step 3 in PR #8, step 4 and v2 in PR #9). Re-run `/ui-check` after each step; the last run (2026-10-23, on the v2 build) had no page-level overflow and only advisory tap targets.
   - Step 1 DONE: Ticker broker overflow fixed (eight expanders plus a table alternative in a scroll box); top of page shortened to one coverage caption and one "About this data" expander; 44px expander headers and link buttons. Page-level scroll at 390 is now zero in all 1280 views.
-  - Step 2 DONE (branch `claude/mobile-pass-2`): no sidebar. View switch is a horizontal radio under the title; Volume basis, Currency, captions and Refresh are in a collapsed "Settings" expander. 44px radios and buttons, caption contrast fixed, radio focus ring. `tests/ui_smoke.py` and `scripts/ui_check.py` updated. 1280 views PASS.
-  - Step 3 DONE (branch `claude/mobile-pass-3`, uncommitted when written): metric strips are two per row at 640px and narrower, values wrap, labels are 18 characters or fewer, volume metrics are compact with the exact figure and basis in a visible caption. `tests/ui_smoke.py` has `check_metrics`, `check_vol_label`, `check_vol_caption`.
-  - Step 4 DONE (branch `claude/mobile-pass-4`, uncommitted when written): at 640px and narrower the Overview rankings are lists of 44px+ buttons (first 10, rest in an expander) and the trade/member tables are a compact wrapping table (max 25 rows) with a "Show all columns" checkbox for the full grid. Details under Decisions.
+  - Step 2 DONE: no sidebar. View switch is a horizontal radio under the title; Volume basis, Currency, captions and Refresh are in a collapsed "Settings" expander. 44px radios and buttons, caption contrast fixed, radio focus ring. `tests/ui_smoke.py` and `scripts/ui_check.py` updated. 1280 views PASS.
+  - Step 3 DONE: metric strips are two per row at 640px and narrower, values wrap, labels are 18 characters or fewer, volume metrics are compact with the exact figure and basis in a visible caption. `tests/ui_smoke.py` has `check_metrics`, `check_vol_label`, `check_vol_caption`.
+  - Step 4 DONE: at 640px and narrower the Overview rankings are lists of 44px+ buttons (first 10, rest in an expander) and the trade/member tables are a compact wrapping table (max 25 rows) with a "Show all columns" checkbox for the full grid. Details under Decisions.
   - Remaining, in order: Step 5 tabs on the Ticker view. Step 6 chart polish (quarterly labels). Step 7 readability.
   - Step 4 small items: three committees' Committee trades tables (HSSY, HLIG, HSGO) scroll 5-9px inside their box at 320px; `tests/ui_smoke.py` does not assert the compact table's "Min. volume" header under Filed minimum; the focus ring shows after mouse clicks on checkboxes (same `:focus-visible` question as the radio).
   - Small items: add a visual hint that the broker table's Link column scrolls off to the right; missing-filings links wrap to three lines at 390. Remaining small targets at 390 are Streamlit chrome (Deploy, Main menu, heading anchors, table toolbar icons, selectbox input and Open arrow) and are not ours to fix.
   - Decide whether the radio focus ring should use `:focus-visible` (it stays after a mouse click now because it uses `:focus-within`). Designer decision.
   - Audit the remaining `help=` tooltips: metric tooltips are done (meaning moved to captions), but dataframe column `help=` for P/E and PEG in `LABELS` is still open.
-  - Red delta text on its pink chip is about 3.9:1 in light (delta-down `#ff2b2b`); design system decision.
+  - Delta contrast: the old red-on-pink 3.9:1 issue was addressed by the v2 delta colours; not re-measured since (the 2026-10-23 `/ui-check` did not measure contrast).
   - About 30px gap between each Settings radio and its caption (Streamlit spacing); cosmetic.
-  - Design system (owner to update): the README Tables rule (still "use a real table for short lists with links") needs the phone patterns recorded: expanders plus a table alternative (step 1), button-row lists for rankings and a compact wrapping `st.table` with a "Show all columns" swap (step 4). The DataTable component README and preview still describe only the selectable grid and its "tick the box" behaviour, and say nothing about the phone rendering, the 25-row cap or that sorting and selection exist only in the full grid.
+  - Design system (owner to update; unclear whether v2 covered this, and the link under Design may still point at v1): the README Tables rule (still "use a real table for short lists with links") needs the phone patterns recorded: expanders plus a table alternative (step 1), button-row lists for rankings and a compact wrapping `st.table` with a "Show all columns" swap (step 4). The DataTable component README and preview still describe only the selectable grid and its "tick the box" behaviour, and say nothing about the phone rendering, the 25-row cap or that sorting and selection exist only in the full grid.
 - Workflow tooling ideas left for the owner to decide: a Claude PR review GitHub Action (needs a workflow file and an API-key secret); scheduled data-health checks (an unattended external task); a Playwright MCP server (runs a third-party package at session start).
 - Hooks, slash commands and the permission rules are untested in a live Claude Code session (see Known limits).
 - Senate trades (no bulk download; CSV load only).
