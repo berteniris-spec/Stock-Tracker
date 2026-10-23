@@ -81,7 +81,7 @@ can't be classified this way.
 Every change goes through the same cycle: **build, test, document**.
 
 1. **Build** the change on `main` (small commits).
-2. **Test** locally with `for t in tests/test_*.py; do python $t; done` (offline unit tests). Pushing triggers the
+2. **Test** locally with `for t in tests/test_*.py; do .venv/bin/python $t; done` (offline unit tests; `.venv/bin/python` locally, plain `python` in CI and the cloud where there is no venv). Pushing triggers the
    `CI` workflow, which also runs `tests/ui_smoke.py`: it drives the real Streamlit app headlessly through every view
    and many members, committees and tickers, in USD and EUR, and fails on any exception.
    `scripts/wait_ci.sh` waits for the run and prints the result.
@@ -91,11 +91,11 @@ Every change goes through the same cycle: **build, test, document**.
    or setup changed.
 
 In Claude Code, `/ship` runs the tests, checks the docs, then commits and pushes on a branch (it stops before a PR or
-merge), `/resume` summarises the project state read-only, and `/ui-check` runs `python scripts/ui_check.py` and reviews
+merge), `/resume` summarises the project state read-only, and `/ui-check` runs `.venv/bin/python scripts/ui_check.py` and reviews
 the screenshots. The script screenshots the four views at 390px and 1280px in light and dark and reports sideways
 scroll, overflow and small tap targets (exit 0 clean, 1 overflow or load failure, 2 environment problem). Playwright is
 not in `requirements.txt`: the Python that runs the script must import both `playwright` and `streamlit`, and the
-Playwright version must match the installed Chromium (1.56.0 for chromium-1194). `.claude/settings.json` also sets
+Playwright version must match the installed Chromium (1.56.0 for chromium-1194 in the cloud image; on a Mac set `PLAYWRIGHT_BROWSERS_PATH` to a folder and run `.venv/bin/python -m playwright install chromium`). `.claude/settings.json` also sets
 permissions: read-only git, `ls` and the tests run without asking; `git add`, `commit` and `push` ask; `rm`, `mv`,
 `curl` and `wget` are denied.
 

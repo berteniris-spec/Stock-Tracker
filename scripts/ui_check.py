@@ -1,9 +1,13 @@
 """Screenshot the app at phone and desktop widths in light and dark, and report layout problems.
 
-Usage: python scripts/ui_check.py [OUTPUT_DIR] [--ids Member=ID Committee=ID Ticker=ID]
+Usage: .venv/bin/python scripts/ui_check.py [OUTPUT_DIR] [--ids Member=ID Committee=ID Ticker=ID]
+(locally use the project's .venv; plain `python` may be a global install without playwright or with an
+incompatible streamlit. In the cloud, plain `python` is fine.)
 
-Needs the `playwright` package and a Chromium in PLAYWRIGHT_BROWSERS_PATH (default /opt/pw-browsers).
-Neither is in requirements.txt. Read-only: it never writes to congress.db. The interpreter that runs
+Needs the `playwright` package and a Chromium in PLAYWRIGHT_BROWSERS_PATH (default /opt/pw-browsers, which
+exists only in the cloud image). On a Mac set it to any folder, e.g.
+`PLAYWRIGHT_BROWSERS_PATH=/some/dir .venv/bin/python -m playwright install chromium`, then run the script
+with the same variable. Neither is in requirements.txt. Read-only: it never writes to congress.db. The interpreter that runs
 this script must import both playwright and streamlit (it starts the app with the same interpreter),
 and the playwright version must match the installed chromium build.
 Limit: only the default state is captured (USD, default volume basis). The Settings expander is not
@@ -25,7 +29,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
+DEFAULT_BROWSERS = "/opt/pw-browsers"
+BROWSERS_FROM_ENV = "PLAYWRIGHT_BROWSERS_PATH" in os.environ
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", DEFAULT_BROWSERS)
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "congress.db"
@@ -192,12 +198,25 @@ def parse_args():
 
 def main():
     args = parse_args()
+    hint = ("Run it with the project's venv: .venv/bin/python scripts/ui_check.py <dir> "
+            "(plain `python` is fine only where it has playwright and a working streamlit, as in CI and the cloud).")
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        print("playwright is not installed for this interpreter (pip install playwright; browsers expected in "
-              f"{os.environ['PLAYWRIGHT_BROWSERS_PATH']}). The interpreter running this script must import "
-              "both playwright and streamlit. Not added to requirements.txt.", file=sys.stderr)
+        print(f"playwright cannot be imported by {sys.executable}. {hint} Playwright is not in "
+              "requirements.txt.", file=sys.stderr)
+        return 2
+    try:
+        import streamlit  # noqa: F401  (the app is started with this same interpreter)
+    except Exception as e:  # a numpy/pyarrow mismatch raises ImportError or AttributeError
+        print(f"streamlit cannot be imported by {sys.executable} ({type(e).__name__}: {e}). {hint}",
+              file=sys.stderr)
+        return 2
+    if not BROWSERS_FROM_ENV and not Path(DEFAULT_BROWSERS).exists():
+        print(f"No Chromium found: {DEFAULT_BROWSERS} does not exist and PLAYWRIGHT_BROWSERS_PATH is not set. "
+              "Set PLAYWRIGHT_BROWSERS_PATH to a folder holding a chromium build, for example "
+              "`PLAYWRIGHT_BROWSERS_PATH=/some/dir .venv/bin/python -m playwright install chromium`, then run "
+              "this script with the same variable.", file=sys.stderr)
         return 2
     if not DB.exists():
         print("congress.db not found; refusing to run (fetch it first).", file=sys.stderr)
