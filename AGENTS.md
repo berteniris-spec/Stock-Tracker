@@ -40,7 +40,7 @@ Small changes (copy, a colour, a one-line fix) still pass through every role, bu
 - Match the surrounding code: naming, comment density, idiom. Keep changes minimal and local.
 - Use existing helpers (`usd`, `short`, `show`, `LABELS` in `app.py`) instead of new formatting code.
 - Never invent data. Missing values are `n/a` in metrics and blank in tables.
-- Run the unit tests (`for t in tests/test_*.py; do python $t; done`) before handing off.
+- Run the unit tests (`for t in tests/test_*.py; do .venv/bin/python $t; done`) before handing off. Use `.venv/bin/python` locally; plain `python` in CI and the cloud, where there is no venv.
 - Do not skip, disable or loosen a test to make it pass.
 
 ## 3. Designer
@@ -57,8 +57,8 @@ Small changes (copy, a colour, a one-line fix) still pass through every role, bu
 
 **Job:** try to break it. Tests all elements, not only the changed ones.
 
-- Run all unit tests: `for t in tests/test_*.py; do python $t; done`.
-- Run the UI smoke test, which drives every view: `python tests/ui_smoke.py` (needs `congress.db`; CI fetches it from the `data` branch).
+- Run all unit tests: `for t in tests/test_*.py; do .venv/bin/python $t; done`.
+- Run the UI smoke test, which drives every view: `.venv/bin/python tests/ui_smoke.py` (needs `congress.db`; CI fetches it from the `data` branch).
 - Exercise each view (Overview, Member, Committee, Ticker) in USD and EUR, with the volume basis switched, with shared links (`?view=Ticker&id=NVDA`), with unknown ids, with members that have no committees or only paper filings, and with empty data.
 - When the change is visual, check phone width and both themes.
 - On failure: do not fix it. Send a report to the **Planner** with the exact command, the output, the steps to reproduce, and what was expected. The Builder then implements the Planner's fix plan.
