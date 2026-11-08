@@ -38,7 +38,7 @@ Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash comma
 - Mobile pass: step 6 chart polish (quarterly labels), step 7 readability. Step 4b: three Committee trades tables (HSSY, HLIG, HSGO) scroll 5 to 9px inside their box at 320px.
 - Step 5 review items: the "Open filing N (PDF)" link (`app.py` ~line 429) is 171x21px; owner decides whether to rename the Price tab to "Price and ratios".
 - Small: focus ring after mouse clicks (`:focus-within` vs `:focus-visible`); dataframe `help=` for P/E and PEG in `LABELS`; delta-down red on pink is about 3.9:1; Brokers tab is long at 320px.
-- Owner: keep or remove the root logo originals (`StockTrader-Logo.svg`, `StockTrader Logo.png`); a square mark for a favicon; design system updates (SVG trace, `Logo.md`, Tabs pattern, README metric strips and Tables rule).
+- Owner: a square mark for a favicon; design system updates (SVG trace, `Logo.md`, Tabs pattern, README metric strips and Tables rule).
 - Ideas: Claude PR review Action; scheduled data-health checks; Playwright MCP server.
 - Data: Senate trades (CSV only); OCR for scanned filings; review `partial` filings; former members' filings are skipped.
 - Full screen-reader and keyboard audit; check the deployed app's grids and chart in both themes.
