@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import urllib.request
+from pathlib import Path
 
 import altair as alt
 import pandas as pd
@@ -20,6 +21,8 @@ import db
 # Streamlit keeps imported modules alive between redeploys; reload so a new db.py/brokers.py is picked up without a reboot.
 importlib.reload(db)
 importlib.reload(brokers)
+
+LOGO = Path(__file__).parent / "assets" / "stocktrader-logo.png"
 
 # The nightly GitHub Action publishes the database to the `data` branch; the app fetches it from there.
 DB_URL = os.environ.get("DB_URL", "https://raw.githubusercontent.com/berteniris-spec/Stock-Tracker/data/congress.db")
@@ -344,13 +347,21 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
   [data-testid="stButton"] button:focus-visible, [data-testid="stDownloadButton"] button:focus-visible,
   [data-testid="stCheckbox"] label:has(input:focus-visible) { outline-color: #8fabd4; }
 }
+/* logo above the page title: 48px high on a phone, 64px above (the 169x144 file is 2x sharp at both) */
+.st-key-brand img { max-width: 100%; height: 48px; width: auto !important; object-fit: contain; }
+/* no hover toolbar (fullscreen button) on the logo */
+.st-key-brand [data-testid="stElementToolbar"] { display: none; }
+@media (min-width: 641px) { .st-key-brand img { height: 64px; } }
 /* checkboxes: 44px rows ("Show all columns", "Only ...") */
 [data-testid="stCheckbox"] label { min-height: 44px; align-items: center; }
 label[data-testid="stRadioOption"] { min-height: 44px; align-items: center; }
 [data-testid="stRadioGroup"] { row-gap: .25rem; }
 </style>
 """, unsafe_allow_html=True)
-st.title("Congress trades")
+with st.container(key="brand"):
+    if LOGO.exists():   # a missing file must not break the app
+        st.image(str(LOGO), width=169, alt="StockTrader logo")
+    st.title("Congress trades")
 VIEWS = ["Overview", "Member", "Committee", "Ticker"]
 SELECT_KEYS = {"Member": "member_sel", "Committee": "committee_sel", "Ticker": "ticker_sel"}
 if "page" not in st.session_state:        # first load of this session: restore the view from a shared link

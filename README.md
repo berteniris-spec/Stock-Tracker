@@ -93,7 +93,7 @@ Every change goes through the same cycle: **build, test, document**.
 In Claude Code, `/ship` runs the tests, checks the docs, then commits and pushes on a branch (it stops before a PR or
 merge), `/resume` summarises the project state read-only, and `/ui-check` runs `.venv/bin/python scripts/ui_check.py` and reviews
 the screenshots. The script screenshots the four views at 390px and 1280px in light and dark and reports sideways
-scroll, overflow and small tap targets (exit 0 clean, 1 overflow or load failure, 2 environment problem). Playwright is
+scroll, overflow and small tap targets (exit 0 clean, 1 overflow, a logo problem or load failure, 2 environment problem). Playwright is
 not in `requirements.txt`: the Python that runs the script must import both `playwright` and `streamlit`, and the
 Playwright version must match the installed Chromium (1.56.0 for chromium-1194 in the cloud image; on a Mac set `PLAYWRIGHT_BROWSERS_PATH` to a folder and run `.venv/bin/python -m playwright install chromium`). `.claude/settings.json` also sets
 permissions: read-only git, `ls` and the tests run without asking; `git add`, `commit` and `push` ask; `rm`, `mv`,
