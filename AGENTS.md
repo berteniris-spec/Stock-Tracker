@@ -4,7 +4,7 @@ Five roles work on this project. Each has one job and hands off to the next. Cla
 
 The owner has chosen **no approval gates**: the agents run the whole loop and report at the end. Stop and ask the owner only in the cases listed under "When to stop".
 
-Before starting, every agent reads `docs/CONTEXT.md` (current state, decisions, open work) and the "Development loop" in `README.md`.
+Before starting, every agent reads `docs/CONTEXT.md` (current state, decisions, open work). The "Development loop" in `README.md` is for the owner.
 
 ## The loop
 
@@ -20,7 +20,16 @@ Planner -> Builder -> Designer (review) -> Tester -> Documenter
 4. **Tester** runs every check. If anything fails, the Tester reports to the **Planner**, who writes a fix plan, and the Builder, Designer and Tester go round again.
 5. **Documenter** records what changed and refreshes `docs/CONTEXT.md` so a new session can resume.
 
-Small changes (copy, a colour, a one-line fix) still pass through every role, but each role's output can be a single line.
+### Size the loop to the change
+
+| Change | Roles |
+|---|---|
+| **Trivial**: copy, a colour, a one-line fix, docs only | Builder (or the main session) edits, runs `scripts/test.sh`, adds a CHANGELOG line. No subagents. |
+| **UI change**: layout, CSS, new widget | Builder, Designer (use `/ui-check`), Tester, Documenter. Planner only if the change is not obvious. |
+| **Logic or data change**: `db.py`, importers, prices, anything affecting a number | Planner, Builder, Tester, Documenter. Designer only if the UI changed. |
+| **New feature or schema change** | The full loop. |
+
+Pick the smallest row that fits. When unsure, go one row up. Each role's output can be a single line.
 
 ## 1. Planner
 
@@ -40,7 +49,7 @@ Small changes (copy, a colour, a one-line fix) still pass through every role, bu
 - Match the surrounding code: naming, comment density, idiom. Keep changes minimal and local.
 - Use existing helpers (`usd`, `short`, `show`, `LABELS` in `app.py`) instead of new formatting code.
 - Never invent data. Missing values are `n/a` in metrics and blank in tables.
-- Run the unit tests (`for t in tests/test_*.py; do .venv/bin/python $t; done`) before handing off. Use `.venv/bin/python` locally; plain `python` in CI and the cloud, where there is no venv.
+- Run `scripts/test.sh` before handing off (it picks `.venv/bin/python` locally and plain `python` in CI and the cloud).
 - Do not skip, disable or loosen a test to make it pass.
 
 ## 3. Designer
@@ -57,7 +66,7 @@ Small changes (copy, a colour, a one-line fix) still pass through every role, bu
 
 **Job:** try to break it. Tests all elements, not only the changed ones.
 
-- Run all unit tests: `for t in tests/test_*.py; do .venv/bin/python $t; done`.
+- Run all unit tests: `scripts/test.sh`.
 - Run the UI smoke test, which drives every view: `.venv/bin/python tests/ui_smoke.py` (needs `congress.db`; CI fetches it from the `data` branch).
 - Exercise each view (Overview, Member, Committee, Ticker) in USD and EUR, with the volume basis switched, with shared links (`?view=Ticker&id=NVDA`), with unknown ids, with members that have no committees or only paper filings, and with empty data.
 - When the change is visual, check phone width and both themes.

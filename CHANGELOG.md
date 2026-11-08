@@ -3,6 +3,16 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Workflow improvements
+- `scripts/test.sh [--smoke]` is the one test command (picks `.venv/bin/python` or `python`; exit 2 if `--smoke` has no `congress.db`). `CLAUDE.md`, `AGENTS.md`, `README.md`, `/ship` and the stop hook use it. CI (`ci.yml`) is unchanged because workflows are protected.
+- `.claude/settings.json` now allows `.venv/bin/python tests/...` and `ui_check.py`, `scripts/test.sh`, `git checkout -b`, `git switch -c` and read-only `gh pr` commands. `/resume` lists PRs with `gh pr list`.
+- `AGENTS.md` has a "Size the loop to the change" table (trivial, UI, logic or data, new feature) so small changes skip subagents. The five agent files carry their own short brief; Tester and Documenter run on Haiku; the Designer runs only for UI changes.
+- `docs/CONTEXT.md` cut from 106 to about 50 lines: step-by-step history and per-step "checked in Chromium only" lists now live only here and in earlier entries.
+- The page CSS moved from `app.py` to `styles.py` (no CSS change; `app.py` 638 to 541 lines). `.idea/` is git-ignored. `requirements.txt` pins `streamlit>=1.66.1,<1.67` because the CSS depends on 1.66.x markup; this changes what the deployed app installs.
+- Not done, on purpose: moving the root Python modules into a package, because `house-import.yml` runs them by path and workflows are protected paths; splitting the views out of `app.py`; deleting the root logo originals (the owner's).
+- Verified: `scripts/test.sh --smoke` passes (smoke test 0 failures; the reportlab part of `test_house_importer` is skipped, reportlab not in the venv). Hooks run by hand with sample input: the path guard asks for `congress.db` and a workflow, allows `app.py`; the stop hook runs the tests and warns about the CHANGELOG; session start does nothing locally. The Bash guard missed `sqlite3 congress.db "delete ..."` (known limit).
+- Not checked: the hooks and slash commands inside a live Claude Code session; the changed `ui_check.py` flow (CSS is identical, so no layout change expected; `/ui-check` not re-run); the deployed app with the new Streamlit pin; CI.
+
 ## StockTrader logo above the title
 - Every view now shows the StockTrader logo (Capitol dome, green arrow and bars) above "Congress trades". Full colour, transparent background, file `assets/stocktrader-logo.png` (169 x 144 px, about 28 KB). It is cropped from the owner's 1536 x 1024 original to the artwork plus 8 px of padding.
 - Size: 48 px high at 640 px wide and narrower, 64 px wider. The width is the file's 169 px. Streamlit sets the image width itself, which stretched the logo, so the CSS overrides it (`width: auto !important`).

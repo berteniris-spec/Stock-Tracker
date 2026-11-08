@@ -4,7 +4,7 @@ Streamlit dashboard joining US congressional trades to committees.
 
 - Roles and the build loop: `AGENTS.md`. Current state and open work: `docs/CONTEXT.md`. Read both first.
 - Python: use `.venv/bin/python` locally (plain `python` may be a global install with an older Streamlit that crashes on numpy 2.x, and no Playwright); plain `python` in CI and the cloud, where there is no venv.
-- Unit tests: `for t in tests/test_*.py; do .venv/bin/python $t; done`
+- Unit tests: `scripts/test.sh` (add `--smoke` for the UI smoke test too; picks `.venv/bin/python` or `python` itself)
 - UI smoke test (needs `congress.db`): `.venv/bin/python tests/ui_smoke.py`
 - Branch off `main`. Do not merge, force-push or delete branches unless the owner asks.
 

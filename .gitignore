@@ -8,3 +8,4 @@ congress.db
 
 # Contentsquare wizard (generated)
 .cs-wizard/
+.idea/
