@@ -6,7 +6,7 @@ Streamlit dashboard joining US congressional trades to committees.
 - Python: use `.venv/bin/python` locally (plain `python` may be a global install with an older Streamlit that crashes on numpy 2.x, and no Playwright); plain `python` in CI and the cloud, where there is no venv.
 - Unit tests: `scripts/test.sh` (add `--smoke` for the UI smoke test too; picks `.venv/bin/python` or `python` itself)
 - UI smoke test (needs `congress.db`): `.venv/bin/python tests/ui_smoke.py`
-- Branch off `main`. Do not merge, force-push or delete branches unless the owner asks.
+- Commit directly to `main` (owner's choice, 2026-11-08); the tests must pass first. Do not force-push or delete branches, and open a PR only if the owner asks.
 
 ## Hooks (`.claude/hooks/`, registered in `.claude/settings.json`)
 - Session start (cloud only): installs dependencies, fetches `congress.db` from the `data` branch, prints the top of `docs/CONTEXT.md`.

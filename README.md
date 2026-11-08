@@ -90,7 +90,7 @@ Every change goes through the same cycle: **build, test, document**.
 4. **Document**: add an entry to `CHANGELOG.md` (what changed, how it was verified) and update this README if behaviour
    or setup changed.
 
-In Claude Code, `/ship` runs the tests, checks the docs, then commits and pushes on a branch (it stops before a PR or
+In Claude Code, `/ship` runs the tests, checks the docs, then commits and pushes to `main` (it stops before a PR or
 merge), `/resume` summarises the project state read-only, and `/ui-check` runs `.venv/bin/python scripts/ui_check.py` and reviews
 the screenshots. The script screenshots the four views at 390px and 1280px in light and dark and reports sideways
 scroll, overflow and small tap targets (exit 0 clean, 1 overflow, a logo problem or load failure, 2 environment problem). Playwright is

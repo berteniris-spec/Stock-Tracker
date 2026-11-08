@@ -7,7 +7,7 @@ Congress trades: a personal Streamlit dashboard joining US congressional stock t
 
 ## Current state
 - `main` has the mobile pass steps 1 to 5, the logo (PR #13) and the venv instructions. No PRs are open.
-- Branch `claude/workflow-improvements` (committed locally, not pushed, no PR) holds the workflow changes: `scripts/test.sh`, wider permissions, a size-the-loop table in `AGENTS.md`, shorter agent briefs, this shorter file, and `styles.py` (CSS moved out of `app.py`).
+- The workflow changes (PR #14, merged) are: `scripts/test.sh`, wider permissions, a size-the-loop table in `AGENTS.md`, shorter agent briefs, this shorter file, and `styles.py` (CSS moved out of `app.py`).
 
 ## How it fits together
 - `app.py`: the Streamlit app. Views Overview, Member, Committee, Ticker; view and id live in the URL (`?view=Ticker&id=NVDA`). Row clicks go through `_goto` in session state. `styles.py`: the page CSS.
@@ -17,7 +17,7 @@ Congress trades: a personal Streamlit dashboard joining US congressional stock t
 - Tests: `scripts/test.sh [--smoke]`. UI check: `.venv/bin/python scripts/ui_check.py <dir>` (Playwright, not a repo dependency; version must match the Chromium build).
 
 ## Workflow
-Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash commands: `/ship`, `/resume`, `/ui-check`. Hooks in `.claude/settings.json`: cloud session start installs and fetches the database; the path guard asks before editing protected paths; the stop hook runs `scripts/test.sh` when a `.py` file changed. Hooks, commands and permissions have not been seen in a live session. Branch off `main`; PR and merge only when the owner asks.
+Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash commands: `/ship`, `/resume`, `/ui-check`. Hooks in `.claude/settings.json`: cloud session start installs and fetches the database; the path guard asks before editing protected paths; the stop hook runs `scripts/test.sh` when a `.py` file changed. Hooks, commands and permissions have not been seen in a live session. Commit straight to `main` after tests pass (owner's choice, 2026-11-08); PRs only when the owner asks.
 
 ## Design
 - Design system: https://claude.ai/artifact/FKb1gTaSePVdEYWRPffmuA (private). Theme in `.streamlit/config.toml` (cream `#efece3`, blue `#8fabd4`, deep blue `#4a70a9`; dark derived). Chart colours are Okabe-Ito.
@@ -47,4 +47,4 @@ Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash comma
 Filings lag trades by up to 45 days. Sector is unknown for trades with no ticker. Unmapped tickers are never flagged committee-relevant. EUR uses one latest rate for all dates. UI work was checked in Chromium only (see `CHANGELOG.md` for what each step covered and skipped): not Safari, Firefox, real touch, screen readers or the deployed app. `ui_check.py` captures only the default state (USD, default basis, Settings closed).
 
 ## Next step
-Owner decides whether to push `claude/workflow-improvements` and open a PR (`/ship`). Then mobile pass step 6.
+Mobile pass step 6 (chart polish).
