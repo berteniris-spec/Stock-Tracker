@@ -81,7 +81,7 @@ can't be classified this way.
 Every change goes through the same cycle: **build, test, document**.
 
 1. **Build** the change on `main` (small commits).
-2. **Test** locally with `for t in tests/test_*.py; do .venv/bin/python $t; done` (offline unit tests; `.venv/bin/python` locally, plain `python` in CI and the cloud where there is no venv). Pushing triggers the
+2. **Test** locally with `scripts/test.sh` (offline unit tests; add `--smoke` for the UI smoke test; it uses `.venv/bin/python` when present, plain `python` otherwise). Pushing triggers the
    `CI` workflow, which also runs `tests/ui_smoke.py`: it drives the real Streamlit app headlessly through every view
    and many members, committees and tickers, in USD and EUR, and fails on any exception.
    `scripts/wait_ci.sh` waits for the run and prints the result.

@@ -1,107 +1,50 @@
 # Project context
 
-Read this first after a session clear. Keep it short and true; the Documenter refreshes it after every change. Last updated: 2026-11-08.
+Read this first after a session clear. Keep it under about 50 lines; history belongs in `CHANGELOG.md`. Last updated: 2026-11-08.
 
 ## What this is
-Congress trades: a personal Streamlit dashboard that joins US congressional stock trades to committee membership and estimated volume. SQLite database, runs locally or on Streamlit Community Cloud from the `main` branch. Public repo, no secrets. Keep use non-commercial.
+Congress trades: a personal Streamlit dashboard joining US congressional stock trades to committee membership and estimated volume. SQLite, runs locally or on Streamlit Community Cloud from `main`. Public repo, no secrets, non-commercial.
 
 ## Current state
-- `main` has the mobile pass steps 1 to 5 (merged in PRs #6 to #11) and is what the deployed app runs.
-- Branch `claude/add-logo` (from `main` at `eae516a`) has the StockTrader logo above the title, uncommitted: `assets/stocktrader-logo.png`, `app.py`, `tests/ui_smoke.py`, `scripts/ui_check.py`. Designer and Tester passed it in Chromium (see the top of `CHANGELOG.md`). It is not on the deployed app.
-- Unit tests and `tests/ui_smoke.py` were run by the Tester on this branch; nothing has been committed or pushed.
+- `main` has the mobile pass steps 1 to 5, the logo (PR #13) and the venv instructions. No PRs are open.
+- Branch `claude/workflow-improvements` (committed locally, not pushed, no PR) holds the workflow changes: `scripts/test.sh`, wider permissions, a size-the-loop table in `AGENTS.md`, shorter agent briefs, this shorter file, and `styles.py` (CSS moved out of `app.py`).
 
 ## How it fits together
-- `assets/stocktrader-logo.png`: the logo, 169 x 144 px PNG, shown above the title with `st.image` (guarded by `LOGO.exists()`).
-- `app.py`: the Streamlit app. Views: Overview, Member, Committee, Ticker. The view and selected id live in the URL (`?view=Ticker&id=NVDA`). Table rows open other views through `_goto` in session state (tick a row's box on desktop, tap a button row on phones).
-- `db.py`: schema and all queries. `house_importer.py`: House Clerk PDF import. `ingest_committees.py`: members and committees. `enrich_sectors.py`: sectors from FinanceDatabase. `prices.py`: closes, ratios and the ECB EUR rate. `brokers.py`: Dutch broker availability. `load_trades.py`, `load_sample.py`: CSV load and fictional demo rows.
-- Data: the nightly `House import` workflow rebuilds `congress.db` and force-pushes it to the `data` branch. The app downloads it on first start; the "Refresh data from GitHub" button in the Settings expander refreshes it. `congress.db` is git-ignored.
-- CI (`ci.yml`): fetches the database, runs `tests/test_*.py` and `tests/ui_smoke.py`. `scripts/wait_ci.sh` waits for a run.
+- `app.py`: the Streamlit app. Views Overview, Member, Committee, Ticker; view and id live in the URL (`?view=Ticker&id=NVDA`). Row clicks go through `_goto` in session state. `styles.py`: the page CSS.
+- `db.py` schema and queries; `house_importer.py` House PDFs; `ingest_committees.py`; `enrich_sectors.py`; `prices.py`; `brokers.py`; `load_trades.py`, `load_sample.py`. These stay at the repo root because the nightly workflow runs them by path.
+- Data: the nightly `House import` workflow rebuilds `congress.db` and force-pushes it to the `data` branch; the app downloads it on first start. `congress.db` is git-ignored.
+- CI (`ci.yml`) fetches the database and runs `tests/test_*.py` and `tests/ui_smoke.py`. `scripts/wait_ci.sh` waits for a run.
+- Tests: `scripts/test.sh [--smoke]`. UI check: `.venv/bin/python scripts/ui_check.py <dir>` (Playwright, not a repo dependency; version must match the Chromium build).
 
 ## Workflow
-Run Python as `.venv/bin/python` locally (tests, smoke test, `ui_check.py`); plain `python` in CI and the cloud. Instructions in `CLAUDE.md`, `AGENTS.md`, `README.md` and `/ui-check` say so (2026-10-23).
-Roles and the loop are in `AGENTS.md` (Planner, Builder, Designer, Tester, Documenter; subagents in `.claude/agents/`). Dev loop: build, test, document (see `README.md`). Branch off `main`; open a PR only when the owner asks; merge only when the owner says.
-
-Slash commands (`.claude/commands/`): `/ship` (tests, doc check, commit and push on a branch; stops before PR or merge), `/resume` (read-only summary of context, branch, open PRs, next step), `/ui-check` (runs the script below, reads a few screenshots, fixes nothing).
-
-`scripts/ui_check.py`: starts the app headless and screenshots Overview, Member, Committee and Ticker at 390px and 1280px, light and dark, with Playwright and a Chromium (`/opt/pw-browsers` in the cloud; locally set `PLAYWRIGHT_BROWSERS_PATH`). Reports page-level sideways scroll (names the widest element), overflowing elements, cut-off text suspects and, at 390 only, tap targets under 44px (advisory). It also checks the logo above the title (present, loaded, inside the viewport, alt text, h1 unchanged). Exit 0 clean, 1 page-level overflow, a logo problem or load failure, 2 environment problem. Playwright is not a repo dependency: run it as `.venv/bin/python scripts/ui_check.py <dir>` locally (plain `python` here is a global anaconda with Streamlit 1.30.0 that crashes on numpy 2.x and has no Playwright; plain `python` in CI and the cloud). The interpreter must import `playwright` and `streamlit`, and the Playwright version must match the Chromium build (1.56.0 for chromium-1194).
-
-Permissions in `.claude/settings.json` (applies to everyone using Claude Code here): allow read-only git, `ls`, `python tests/test_*.py`, `python tests/ui_smoke.py` (not yet `.venv/bin/python ...`: those will prompt), Read, Glob, Grep; ask for `git add`, `commit`, `push`; deny `rm`, `mv`, `curl`, `wget`.
-
-`CLAUDE.md` points Claude Code to `AGENTS.md` and this file. Hooks in `.claude/settings.json` (scripts in `.claude/hooks/`):
-- `session_start.sh`: cloud sessions only; installs requirements plus reportlab, fetches `congress.db` from the `data` branch if missing or over 12 hours old, prints the top of this file. Never fails the session.
-- `guard_paths.py`: asks before edits to `congress.db`, `.github/workflows/`, `.streamlit/config.toml`; best-effort Bash check.
-- `on_stop.py`: runs unit tests when a `.py` file changed and blocks the stop on failure; warns when code changed without a CHANGELOG entry.
+Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash commands: `/ship`, `/resume`, `/ui-check`. Hooks in `.claude/settings.json`: cloud session start installs and fetches the database; the path guard asks before editing protected paths; the stop hook runs `scripts/test.sh` when a `.py` file changed. Hooks, commands and permissions have not been seen in a live session. Branch off `main`; PR and merge only when the owner asks.
 
 ## Design
-- Design system: https://claude.ai/artifact/FKb1gTaSePVdEYWRPffmuA (private; tokens, README, components Metric, Notice, DataTable, VolumeChart).
-- Logo: the design system (Version 3) has it in the Logo group (a PNG asset, a README Logo rule, tokens `logo-height-phone` 48px and `logo-height` 64px). The app uses the PNG, not the SVG: the SVG in the design system and the repo root is an incomplete single-colour trace (outlines only, no fills). The logo is full colour on both themes, sits above the h1 (which stays the page title), is not a link, and is 48px high at 640px and narrower, 64px wider.
-- Theme in `.streamlit/config.toml`, from Color Hunt: cream `#efece3`, blue `#8fabd4`, deep blue `#4a70a9`, black. A dark theme is derived. Deep blue is 4.3:1 on cream: controls and large text only.
-- Chart series use the colour-blind-safe Okabe-Ito colours, not the palette.
-- Copy: plain-language headers, sentence case, `n/a` in metrics and blank in tables for missing values, compact headline amounts (`$102M`) with exact figures in tooltips and, for volume, in a visible caption.
+- Design system: https://claude.ai/artifact/FKb1gTaSePVdEYWRPffmuA (private). Theme in `.streamlit/config.toml` (cream `#efece3`, blue `#8fabd4`, deep blue `#4a70a9`; dark derived). Chart colours are Okabe-Ito.
+- Logo: PNG (the SVG is an incomplete trace), full colour on both themes, above the h1, not a link, 48px high at 640px and narrower, 64px wider.
+- Copy: plain-language, sentence case, `n/a` in metrics and blank in tables for missing values, compact headline amounts (`$102M`) with exact figures in tooltips and a visible caption.
 
-## Decisions
+## Decisions that still bind
 - No approval gates between agents; they stop only for the cases in `AGENTS.md`.
-- Hooks guard and verify instead of adding approval gates: the stop hook enforces passing tests, the path guard asks only for the database, workflows and theme (the "When to stop" cases). They are best-effort and must never break a session start.
-- The top-level view switch stays a radio because it wraps at 390px. The Ticker view uses plain `st.tabs(["Trades", "Price", "Brokers"])` with no default, key, on_change or bind, so no tab is in the URL: a shared `?view=Ticker&id=X` link always opens Trades and tab switches are client-side. Streamlit 1.66.1 (installed; earlier notes said 1.66.0) does have `st.tabs` default/key/on_change/`bind="query-params"`, but `bind` would make every switch a rerun and require rewriting `sync_url`. A link to Price or Brokers is a possible later small step. `requirements.txt` is unpinned, so the deployed Streamlit version is unknown.
-- Ticker tabs (step 5): heading, selectbox, ticker name and "This is information, not investment advice." stay above the tabs. Trades (default): metrics, volume caption, 45-day caption, trades table, CSV. Price: closes, exchange, type, price caption, P/E, Fwd P/E, PEG captions (not ETFs). Brokers: verdict, ETF note, eight expanders, table expander with a scroll hint, final broker caption. 390px heights (MSFT): 3699 before; Trades 2285, Price 1501, Brokers about 1700 closed.
-- Broker list uses collapsed expanders (phone width) plus a table in an expander for comparison. Cost: on desktop, comparing brokers takes a click. Chosen so the page never scrolls sideways at 390px while keeping a real table for screen readers and comparison.
-- No sidebar. The view switch is a horizontal `st.radio` (key `page`) under the title, not `st.segmented_control`: the radio works on every unpinned Streamlit version and wraps at 390px. Volume basis, Currency, the rate and price captions and Refresh live in a collapsed "Settings" expander, so nothing hides behind a sidebar toggle. Their help text is a visible caption because tooltips overflowed at 390px.
-- Risk: the radio CSS (44px options, ring, focus ring) matches `label[data-testid="stRadioOption"]`, Streamlit 1.66.0's DOM, because Streamlit exposes no theme CSS variables for it. An upgrade could silently stop the rules matching; re-run `/ui-check` and the Playwright measurements after upgrading.
-- Risk: the two-up metric CSS (step 3) also depends on 1.66.0's DOM: `stHorizontalBlock`, `stColumn`, `stMetricValue` test ids, `:has(stMetric)`, and the value structure `stMetricValue > stMarkdownContainer > p`. If it stops matching, metrics stack as before, but the wrap rule could stop and values like "NYSE American" could truncate again. Streamlit stacks columns at its own 640px breakpoint, which the CSS follows.
-- Headline volume is compact (`short()`) on every view, with the exact figure in the tooltip and in a visible caption under each metric strip that also states the basis (midpoint or lowest figure of each filed range). Why: compact values fit two per row, but a tooltip alone hides the exact figure and basis on touch screens. Cost: about 63px per view.
-- Metric labels must be 18 characters or fewer, so two fit per row at 320px; `check_metrics` in `tests/ui_smoke.py` enforces it. Tooltip text that carries meaning goes in a visible caption instead.
-- "Committee-relevant" keeps its name (the Designer suggested "Relevant trades") to match the table column and the checkbox.
-- Captions are forced to opacity 1 (Streamlit fades them to 0.6, about 3.4:1) to reach 10.5:1 light and 10.9:1 dark.
-- The paper-filing notice is one status caption plus one "About this data" expander, to shorten the top of every view.
-- Phone tables (step 4), swap at 640px. Python cannot read the viewport width, so both renderings are in the page and CSS on the `st-key-*` container classes shows one. Above 640px the selectable dataframes and "Tick the box to open..." captions are unchanged; on phones the Overview rankings say "Tap a row to open that member." and the trade tables say "Tick Show all columns above for every column and row."
-  - Rankings are `st.button` rows (key `open_<table>_<i>`) whose `on_click` sets `_goto`, reusing the click-through, so URLs are unchanged. Not the dataframe: its row-select checkbox is canvas-painted at 16px and cannot be styled. Not `st.link_button`: it opens a new tab and session.
-  - Trade and member tables are a real wrapping `st.table` (4-5 columns, max 25 rows). Why: a canvas grid with content-sized columns could not fit 4-5 columns in 288-358px, and fixed widths or dropping or abbreviating columns would lose or alter facts (the Designer's suggestion to drop Type from Committee trades was declined). It also reads better in a screen reader. Cost: sorting and selection only in "Show all columns" (or on desktop); pages are taller (390px Overview 3618px vs 2942px, Committee HSAP 3161px vs 2018px).
-- Risk: the step 4 CSS depends on Streamlit 1.66.0 internals: `st-key-*` container classes, `stLayoutWrapper` hidden via `:has()`, the `stTable` DOM, Styler white-space rules and the button inner span structure. An upgrade could stop the swap (both renderings would show) or break button alignment; re-run `/ui-check` after upgrading. The wrapper's overflow rule at 360-640px is overridden by Streamlit's own style (overflow auto), so a too-wide table would scroll in its box rather than fail visibly.
-- Risk: the tab CSS (step 5) matches Streamlit 1.66.1's React-Aria tab DOM (`[role="tab"]`, `[role="tablist"]`, `aria-selected`, `data-testid="stTab"`, hidden `react-aria-SelectionIndicator`). An upgrade could stop it matching and tabs would fall back to Streamlit's default small tabs; `ui_check.py`'s tab checks flag it. Tab colours: unselected text at caption colours (about 10.5:1 / 10.9:1), selected solid ink bold (17.8:1 / 15.9:1) with a 3px underline `#4a70a9` light / `#8fabd4` dark (4.25:1 on cream, indicator only).
-- Volume is a midpoint estimate of filed ranges; committee membership is a current snapshot, not as of the trade date.
-
-- Logo decisions (branch `claude/add-logo`): PNG, not SVG, because the SVG is an incomplete trace. Full colour on both themes, no dark-mode inversion, because the white dome and green keep the mark above 3:1 on dark. Above the h1 rather than replacing it, so the page title stays "Congress trades" for the tests. Not a link, no favicon (the artwork is not square). Width fixed at 169px with `width: auto !important`, because Streamlit's image width stretched it. The hover Fullscreen button is hidden with `stElementToolbar`.
-- Risk: the logo CSS depends on Streamlit 1.66.1's `st.image` markup and the `st-key-brand` container class. Re-run `/ui-check` after an upgrade.
-- `ui_check.py` reports and fixes nothing; it exits 1 for page-level overflow, a logo problem (including a missing PNG) or a failed load, so small tap targets never fail it. Playwright stays out of `requirements.txt` so CI and the cloud install are unchanged.
-- Permissions: routine read-only and test commands need no prompt; anything that records or publishes (`git add/commit/push`) asks; destructive or network shell tools are denied.
+- No sidebar. View switch is a horizontal `st.radio` (key `page`); Settings expander holds basis, currency and Refresh. Help text that carries meaning is a visible caption, not a tooltip.
+- Metric strips are two per row at 640px and narrower; labels 18 characters or fewer (`check_metrics` enforces it).
+- Phone tables swap at 640px: both renderings are in the page and CSS shows one (`st-key-ph_*` / `st-key-tbl_*`). Rankings are button rows; trade and member tables are a wrapping `st.table` (max 25 rows) with a "Show all columns" checkbox.
+- Ticker view uses plain `st.tabs(["Trades", "Price", "Brokers"])`: no tab in the URL, so a shared link opens Trades.
+- Brokers are collapsed expanders plus a table in an expander.
+- Volume is a midpoint estimate of filed ranges; committee membership is a current snapshot.
+- Risk: `styles.py` targets Streamlit 1.66.x DOM (`stRadioOption`, `stMetricValue`, `stLayoutWrapper`, `stTable`, `[role="tab"]`, `st-key-*`, `st.image`). After any Streamlit upgrade run `/ui-check`. `requirements.txt` pins `streamlit>=1.66.1,<1.67`; bump it deliberately.
 
 ## Open work
-- Logo (branch `claude/add-logo`, uncommitted): the owner decides when to commit. Not on the deployed app until it is merged to `main`, which only the owner asks for.
-- Owner, design system: the SVG in the Logo group is an incomplete trace (the PNG is the usable mark); `api/assets/Logo.md` still lists only the SVG until the page regenerates it; an optional dark-theme logo variant; the Tabs pattern is still missing.
-- Owner: the untracked root files `StockTrader-Logo.svg` and `StockTrader Logo.png` are the originals. Remove them or keep them.
-- Favicon: needs a square mark from the owner.
-- Mobile and readability pass: steps 1 to 5 are merged to `main`. Re-run `/ui-check` after each step.
-  - Step 1 DONE: Ticker broker overflow fixed (eight expanders plus a table alternative in a scroll box); top of page shortened to one coverage caption and one "About this data" expander; 44px expander headers and link buttons. Page-level scroll at 390 is now zero in all 1280 views.
-  - Step 2 DONE: no sidebar. View switch is a horizontal radio under the title; Volume basis, Currency, captions and Refresh are in a collapsed "Settings" expander. 44px radios and buttons, caption contrast fixed, radio focus ring. `tests/ui_smoke.py` and `scripts/ui_check.py` updated. 1280 views PASS.
-  - Step 3 DONE: metric strips are two per row at 640px and narrower, values wrap, labels are 18 characters or fewer, volume metrics are compact with the exact figure and basis in a visible caption. `tests/ui_smoke.py` has `check_metrics`, `check_vol_label`, `check_vol_caption`.
-  - Step 4 DONE: at 640px and narrower the Overview rankings are lists of 44px+ buttons (first 10, rest in an expander) and the trade/member tables are a compact wrapping table (max 25 rows) with a "Show all columns" checkbox for the full grid. Details under Decisions.
-  - Step 5 DONE (PR #11): Ticker view tabs Trades, Price, Brokers; broker table Link scroll hint; broker links at least 44px. Details under Decisions.
-  - Step 5 review: Designer PASS and Tester PASS (Chromium, desktop only). Open items from it: (1) the "Open filing N (PDF)" link in the paper filings table (`app.py` ~line 429) is 171x21px at 640px and wider; `ui_check.py` only flags small targets at 390. (2) Owner decision: rename the Price tab to "Price and ratios"? (it holds Exchange, Type and P/E). (3) If Streamlit styles the tab's inner paragraph, add `[role="tab"] * {color: inherit}` (unselected colour works by inheritance only). (4) Design system README still says metric strips are four columns and has no Tabs pattern or `.broker-table` link size (owner updates).
-  - Remaining, in order: Step 6 chart polish (quarterly labels). Step 7 readability.
-  - Step 4b: the three Committee trades tables (HSSY, HLIG, HSGO) scroll 5-9px inside their box at 320px.
-  - Small items: the focus ring shows after mouse clicks on checkboxes (same `:focus-visible` question as the radio); missing-filings links wrap to three lines at 390; the Brokers tab is long with every expander open at 320 (5060px), optional cap on the notes column; comboboxes are 38px on Member, Committee and Ticker (Streamlit). Remaining small targets at 390 are Streamlit chrome (Deploy, Main menu, heading anchors, table toolbar icons, selectbox input and Open arrow) and are not ours to fix.
-  - Decide whether the radio focus ring should use `:focus-visible` (it stays after a mouse click now because it uses `:focus-within`). Designer decision.
-  - Audit the remaining `help=` tooltips: metric tooltips are done (meaning moved to captions), but dataframe column `help=` for P/E and PEG in `LABELS` is still open.
-  - Red delta text on its pink chip is about 3.9:1 in light (delta-down `#ff2b2b`); design system decision.
-  - About 30px gap between each Settings radio and its caption (Streamlit spacing); cosmetic.
-  - Design system (owner to update): a Tabs component (44px tab bar; selected ink bold plus 3px primary underline, focus colour in dark; unselected ink at 78%, 82% cream in dark; 2px focus ring; Ticker view only; Streamlit coupling to `[role="tab"]` and `.react-aria-SelectionIndicator`). Also the stale README Tables rule (still "use a real table for short lists with links") needs the phone patterns recorded: expanders plus a table alternative (step 1), button-row lists for rankings and a compact wrapping `st.table` with a "Show all columns" swap (step 4). The DataTable component README and preview still describe only the selectable grid and its "tick the box" behaviour, and say nothing about the phone rendering, the 25-row cap or that sorting and selection exist only in the full grid.
-- Workflow tooling ideas left for the owner to decide: a Claude PR review GitHub Action (needs a workflow file and an API-key secret); scheduled data-health checks (an unattended external task); a Playwright MCP server (runs a third-party package at session start).
-- Hooks, slash commands and the permission rules are untested in a live Claude Code session (see Known limits).
-- Senate trades (no bulk download; CSV load only).
-- OCR for scanned paper filings (`no_text`); review `partial` filings; former members' filings (`unmatched_member`) are skipped.
-- Full screen-reader and keyboard audit.
-- Check the deployed app's data grids and chart in both themes after the palette change.
+- Mobile pass: step 6 chart polish (quarterly labels), step 7 readability. Step 4b: three Committee trades tables (HSSY, HLIG, HSGO) scroll 5 to 9px inside their box at 320px.
+- Step 5 review items: the "Open filing N (PDF)" link (`app.py` ~line 429) is 171x21px; owner decides whether to rename the Price tab to "Price and ratios".
+- Small: focus ring after mouse clicks (`:focus-within` vs `:focus-visible`); dataframe `help=` for P/E and PEG in `LABELS`; delta-down red on pink is about 3.9:1; Brokers tab is long at 320px.
+- Owner: keep or remove the root logo originals (`StockTrader-Logo.svg`, `StockTrader Logo.png`); a square mark for a favicon; design system updates (SVG trace, `Logo.md`, Tabs pattern, README metric strips and Tables rule).
+- Ideas: Claude PR review Action; scheduled data-health checks; Playwright MCP server.
+- Data: Senate trades (CSV only); OCR for scanned filings; review `partial` filings; former members' filings are skipped.
+- Full screen-reader and keyboard audit; check the deployed app's grids and chart in both themes.
 
 ## Known limits
-Filings lag trades by up to 45 days. Sector is unknown for trades with no ticker. Unmapped tickers are never flagged committee-relevant. EUR uses one latest rate for all dates.
-
-Logo (branch `claude/add-logo`, uncommitted): checked in Chromium only, not on the deployed app. Not checked: EUR and the Filed minimum basis with the logo in a browser; members with no committees, paper-only filings or empty data in a browser; Safari and Firefox; high-DPI sharpness; screen readers; the dark theme by eye; the hover Fullscreen button; CI. The logo's alt text is "StockTrader logo"; how a screen reader announces it is untested. A missing PNG shows no logo and makes `ui_check.py` exit 1.
-
-Mobile step 5 was checked in Chromium only (desktop; USD and EUR; light and dark; 320, 390, 640, 641, 1280; NVDA, BTC, AMI, unknown id ZZZZ): not the deployed app, console warnings, an ETF-kind ticker (none in the data), EUR beyond the Ticker tabs, the Filed minimum basis on Overview, Safari or Firefox, real touch, screen readers, the real Tab order; a zero-trade ticker (none exists); the reportlab part of `test_house_importer` (reportlab not in the venv).
-
-`ui_check.py` captures only the default state (USD, default volume basis, Settings closed); EUR, volume basis and the opened Settings at 390 are not checked. The 390 screenshots are viewport height (the page scrolls inside `stMain`). Tap-target counts are advisory. Mobile step 4 was checked in Chromium only (320 to 1280, light and dark): not the deployed app, Safari or Firefox, real touch, expander rows on a real phone, screen readers; EUR and Filed minimum in a browser only on Overview and Member (the rest AppTest). Mobile step 3 was checked in Chromium only (320 to 1280, both themes, USD/EUR, both bases): not a real phone or Safari, not screen readers, not the deployed app, not Jan 1 for Latest filing, not how the escaped `\$` renders in tooltips. Mobile step 2 was checked in Chromium at 390 and 1280 only: not real touch or mobile Safari, not the deployed app, not the real Refresh network path (failure was simulated), and the Filed minimum basis was AppTest only. The slash commands and permission rules have not been seen working in a live session.
-
-Hooks: not yet seen firing in a live session; `${CLAUDE_PROJECT_DIR}` expansion, a fresh container install and the 120s test timeout are unchecked. The Bash guard has false positives (`cp congress.db /tmp/x`, `>` in SQL) and a false negative (Python writing the file). The stop hook runs the full unit tests (15s or more) whenever any `.py` file is uncommitted, and its CHANGELOG warning fires on any uncommitted code change.
+Filings lag trades by up to 45 days. Sector is unknown for trades with no ticker. Unmapped tickers are never flagged committee-relevant. EUR uses one latest rate for all dates. UI work was checked in Chromium only (see `CHANGELOG.md` for what each step covered and skipped): not Safari, Firefox, real touch, screen readers or the deployed app. `ui_check.py` captures only the default state (USD, default basis, Settings closed).
 
 ## Next step
-The owner decides whether to commit `claude/add-logo`. If they ask, run `/ship` on that branch (tests, docs check, commit, push; no PR or merge). Then the owner items above: favicon mark, the design-system SVG trace, and the `Logo.md` regeneration.
+Owner decides whether to push `claude/workflow-improvements` and open a PR (`/ship`). Then mobile pass step 6.
