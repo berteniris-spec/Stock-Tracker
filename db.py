@@ -330,7 +330,7 @@ def ticker_summary(con, ticker):
 
 def top_tickers(con, limit=15):
     return _df(con, f"""
-        SELECT t.ticker, COALESCE(ts.sector, 'Unmapped') AS sector, ti.exchange, tp.price, tv.pe, tv.forward_pe, tv.peg,
+        SELECT t.ticker, ti.name, COALESCE(ts.sector, 'Unmapped') AS sector, ti.exchange, tp.price, tv.pe, tv.forward_pe, tv.peg,
                COUNT(*) AS trades, COUNT(DISTINCT t.bioguide_id) AS members,
                COALESCE(SUM({_est()}), 0) AS est_volume
         FROM trades t LEFT JOIN ticker_sector ts USING (ticker)
@@ -361,8 +361,9 @@ def paper_filings(con, bioguide_id=None):
         df = _df(con, sql + " ORDER BY m.name, f.year DESC, f.doc_id", params)
     except Exception:                      # older database without a filings table
         return pd.DataFrame(columns=cols)
-    df["url"] = ("https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/"
-                 + df["year"].astype(str) + "/" + df["doc_id"] + ".pdf")
+    base = "https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/"
+    # built row by row: vectorised string concatenation fails on empty frames with pandas 3 / pyarrow strings
+    df["url"] = [f"{base}{y}/{d}.pdf" for y, d in zip(df["year"], df["doc_id"])]
     return df[cols]
 
 
@@ -416,3 +417,12 @@ def price_freshness(con):
         FROM trades t LEFT JOIN ticker_price tp USING (ticker)
         WHERE t.ticker IS NOT NULL AND t.ticker <> ''""").fetchone()
     return tuple(row)
+
+
+def overview_stats(con):
+    """Headline numbers for the Overview: trades, members with trades, estimated volume, newest disclosure date."""
+    row = con.execute(f"""
+        SELECT COUNT(*), COUNT(DISTINCT t.bioguide_id), COALESCE(SUM({_est()}), 0),
+               MAX(CASE WHEN t.disclosure_date <= date('now') THEN t.disclosure_date END)
+        FROM trades t""").fetchone()
+    return {"trades": row[0], "members": row[1], "volume": row[2], "newest": row[3]}

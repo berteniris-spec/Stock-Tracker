@@ -2,25 +2,24 @@
 
 Run:  streamlit run app.py
 """
+import html
 import os
+import re
 import shutil
 import urllib.request
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
 import importlib
 
 import brokers
-import consent
 import db
 
 # Streamlit keeps imported modules alive between redeploys; reload so a new db.py/brokers.py is picked up without a reboot.
 importlib.reload(db)
 importlib.reload(brokers)
-importlib.reload(consent)
-
-CONTENTSQUARE_TAG_ID = "506730812ef03"
 
 # The nightly GitHub Action publishes the database to the `data` branch; the app fetches it from there.
 DB_URL = os.environ.get("DB_URL", "https://raw.githubusercontent.com/berteniris-spec/Stock-Tracker/data/congress.db")
@@ -34,13 +33,12 @@ def download_db(url=DB_URL):
 
 
 st.set_page_config(page_title="Congress Trades", layout="wide")
-consent.render_consent_banner(CONTENTSQUARE_TAG_ID)   # the analytics tag loads only after the visitor accepts
 
 if not db.DB_PATH.exists():  # first start on a fresh host: fetch the published database
     try:
         download_db()
     except Exception as e:
-        st.error(f"No local database and the published one could not be fetched ({e}). "
+        st.error(f"**Database unavailable:** no local database and the published one could not be fetched ({e}). "
                  "Run `python ingest_committees.py` and `python house_importer.py` locally, or set DB_URL.")
         st.stop()
 
@@ -51,7 +49,7 @@ con.executescript(db.SCHEMA)  # a database published before newer tables existed
 
 
 RATE, RATE_DATE = db.usd_per_eur(con)      # USD per 1 EUR (ECB reference rate)
-CURRENCY = "USD"                           # set from the sidebar below
+CURRENCY = "USD"                           # set from Settings below
 
 
 def conv(x):
@@ -68,6 +66,18 @@ def usd(n):
     return f"{sym()}{int(conv(n)):,}" if n == n and n is not None else "n/a"
 
 
+def short(n):
+    """Compact money for headline numbers: $102M, $1.5B, €850K (exact figures stay in the tables)."""
+    if n != n or n is None:
+        return "n/a"
+    v = conv(n)
+    for div, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(v) >= div:
+            x = v / div
+            return f"{sym()}{x:.1f}{suffix}" if x < 100 else f"{sym()}{x:.0f}{suffix}"
+    return f"{sym()}{v:,.0f}"
+
+
 LABELS = {"est_volume": st.column_config.NumberColumn("Volume"),
           "amount_est": st.column_config.NumberColumn("Est. amount"),
           "amount_min": st.column_config.NumberColumn("Min"),
@@ -77,16 +87,71 @@ LABELS = {"est_volume": st.column_config.NumberColumn("Volume"),
           "pe": st.column_config.NumberColumn("P/E", help="Trailing price/earnings (last 12 months). Blank = no positive earnings or no data."),
           "forward_pe": st.column_config.NumberColumn("Fwd P/E", help="Price / analysts' expected next-12-month earnings."),
           "peg": st.column_config.NumberColumn("PEG", help="P/E divided by expected earnings growth. Around 1 or below is often read as "
-                                               "cheap relative to growth; definitions vary by data provider.")}
+                                               "cheap relative to growth; definitions vary by data provider."),
+          # plain-language headers instead of database column names
+          "name": "Name", "member": "Member", "chamber": "Chamber", "party": "Party", "title": "Role",
+          "as_of": "As of", "tx_date": "Trade date", "disclosure_date": "Disclosed", "ticker": "Ticker",
+          "asset": "Asset", "tx_type": "Type", "owner": "Owner", "amount_label": "Amount range",
+          "sector": "Sector", "trades": "Trades", "members": "Members",
+          "committee_relevant": "Committee-relevant"}
 MONEY_COLS = ("est_volume", "amount_est", "amount_min", "amount_max")
 PRICE_COLS = ("price",)
 
 
-def show(df):
-    """Table with $ and thousands separators; the underlying numbers stay numeric so sorting works."""
+def csv_button(raw, download):
+    """A plain-file alternative to the canvas grid (works with screen readers and spreadsheets)."""
+    st.download_button("Download as CSV (amounts in USD)", raw.to_csv(index=False).encode("utf-8"), file_name=f"{download}.csv",
+                       mime="text/csv", key=f"dl_{download}")
+
+
+PHONE_ROWS = 25
+
+
+def phone_table(df, cols, fmt):
+    """Compact phone table: `cols` of the first PHONE_ROWS rows as a real HTML table, so long text wraps instead of clipping.
+
+    `df` is already converted to the display currency and `fmt` is show()'s number format. st.table ignores column_config,
+    so the headers come from LABELS. Callers pass trades newest first and members by volume, so the cap keeps the top rows.
+    """
+    cols = [c for c in cols if c in df.columns]
+    label = {c: (LABELS.get(c) if isinstance(LABELS.get(c), str) else (LABELS.get(c) or {}).get("label")) or c for c in cols}
+    view = df[cols].head(PHONE_ROWS).rename(columns=label)
+
+    def cell(v, f=None):              # st.table renders each cell as markdown, so escape $ * _ and the like
+        return "" if pd.isna(v) else md_esc(f.format(v) if f else v)
+
+    styled = view.style.format({label[c]: (lambda v, f=fmt.get(c): cell(v, f)) for c in cols}).hide(axis="index")
+    numeric = [label[c] for c in cols if pd.api.types.is_numeric_dtype(df[c])]
+    if numeric:
+        styled = styled.set_properties(subset=numeric, **{"text-align": "right"})
+    keep = [label[c] for c in cols if c in ("tx_date", "ticker", "party") or label[c] in numeric]   # dates, tickers, parties and amounts never break; names and types wrap at spaces
+    if keep:
+        styled = styled.set_properties(subset=keep, **{"white-space": "nowrap"})
+    st.table(styled)
+    if len(df) > PHONE_ROWS:
+        trades = "tx_date" in cols
+        st.caption(f"Showing the {'newest' if trades else 'top'} {PHONE_ROWS} of {len(df):,} {'trades' if trades else 'members'}. "
+                   "Tick Show all columns above for every column and row.")
+
+
+def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name=None, desktop_only=False):
+    """Table with $ and thousands separators; the underlying numbers stay numeric so sorting works.
+
+    With key/ids/goto the rows are clickable: selecting a row jumps to view `goto` with that row's id
+    (`ids` is aligned with `df`'s rows; `goto` is (view name, session-state key of that view's selectbox)).
+    With `name` and `phone_cols` the full table sits in a container that CSS hides at 640px and narrower, where a
+    second container shows `phone_cols` only as a wrapping st.table of the first 25 rows (canvas columns cannot
+    wrap and clipped at 358px), with a "Show all columns" checkbox that switches to the full grid (both containers
+    are in the page at every width, so resizing needs no rerun). With `name` and `desktop_only` the table is hidden at phone width and the
+    caller draws the phone rendering. An empty table is never swapped.
+    """
+    raw = df.copy()
     df = df.copy()
     if "title" in df:
         df["title"] = df["title"].fillna("")
+    for c in MONEY_COLS + PRICE_COLS + ("pe", "forward_pe", "peg"):
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")      # all-missing columns arrive as None: show them blank, not "None"
     for c in MONEY_COLS + PRICE_COLS:
         if c in df.columns:
             df[c] = df[c].map(lambda v: conv(v) if v == v and v is not None else v)   # stays numeric: sorting still works
@@ -94,80 +159,333 @@ def show(df):
     fmt.update({c: sym() + "{:,.2f}" for c in PRICE_COLS if c in df.columns})
     fmt.update({c: "{:,.1f}" for c in ("pe", "forward_pe") if c in df.columns})
     fmt.update({c: "{:,.2f}" for c in ("peg",) if c in df.columns})
-    st.dataframe(df.style.format(fmt, na_rep="") if fmt else df,
-                 hide_index=True, column_config=LABELS, use_container_width=True)
+    kwargs = dict(on_select="rerun", selection_mode="single-row", key=key) if key else {}
+    styled = df.style.format(fmt, na_rep="") if fmt else df
+
+    def grid(**kw):
+        return st.dataframe(styled, hide_index=True, column_config=LABELS, use_container_width=True, **kw)
+
+    if name and not df.empty and (phone_cols or desktop_only):
+        with st.container(key=f"tbl_{name}"):
+            event = grid(**kwargs)
+        if phone_cols:
+            with st.container(key=f"ph_{name}"):
+                if st.checkbox("Show all columns", key=f"allcols_{name}"):
+                    grid()
+                    st.caption("Scroll sideways inside the table to see more columns.")
+                else:
+                    phone_table(df, phone_cols, fmt)
+    else:
+        event = grid(**kwargs)
+    if download:
+        csv_button(raw, download)
+    if key and ids is not None:
+        rows = event.selection.rows
+        if rows:
+            st.session_state["_goto"] = (goto[0], goto[1], list(ids)[rows[0]])
+            st.rerun()
+
+
+def esc(s):
+    """Escape dollar signs for markdown help/caption text (two $ in one string would render as LaTeX)."""
+    return s.replace("$", "\\$")
+
+
+NO_SECTORS_NOTE = {"Member": "Committee-relevant is n/a: none of this member's committees map to sectors, "
+                             "so the sector heuristic does not apply.",
+                   "Committee": "Committee-relevant is n/a: this committee does not map to sectors, "
+                                "so the sector heuristic does not apply."}
+
+
+def vol_caption(vol, scope=""):
+    """Visible caption under a volume metric: the basis and the exact figure (tooltips are not reachable on touch)."""
+    what = "the lowest figure in each filed range" if vol_label == "Min. volume" else "the midpoint of each filed range"
+    st.caption(esc(f"{vol_label} is {what}{scope}. Exact: {usd(vol)}."))
 
 
 def relevant_metric(col, df, sectors_known):
-    if sectors_known:
-        col.metric("Committee-relevant trades", int(df["committee_relevant"].sum()))
-    else:
-        col.metric("Committee-relevant trades", "n/a", help="No sector mapping for this committee: its "
-                   "jurisdiction is broad or procedural, so the heuristic doesn't apply.")
+    col.metric("Committee-relevant", int(df["committee_relevant"].sum()) if sectors_known else "n/a")
 
 
+def md_esc(s):
+    """Escape text for a markdown label: dollar signs (esc) plus the characters that start emphasis, links or code."""
+    return esc(re.sub(r"([\\`*_\[\]])", r"\\\1", str(s)))
+
+
+def _open(view, select_key, ident):
+    """Button callback: the same hand-off as selecting a table row; the `_goto` pop below switches the view."""
+    st.session_state["_goto"] = (view, select_key, ident)
+
+
+def _has(x):
+    return x is not None and x == x and str(x).strip() != ""
+
+
+def n_trades(n):
+    return f"{int(n):,} trade{'s' if int(n) != 1 else ''}"
+
+
+def ranking(name, df, cols, ids, goto, noun, label, download=None):
+    """Overview ranking table. Wide screens: the selectable table plus its caption. Phone: a list of full-width buttons.
+
+    Both are in the page at every width and CSS shows one at Streamlit's 640px breakpoint (Python cannot see the
+    viewport). `label(row)` is the text after the rank, already markdown-escaped. Ranks 11 and up sit in an expander.
+    """
+    if df.empty:                                  # nothing to rank: just the empty table, no captions or list
+        show(df[cols], key=name, ids=ids, goto=goto, download=download)
+        return
+    with st.container(key=f"tbl_cap_{name}"):
+        st.caption(f"Tick the box at the start of a row to open that {noun}.")
+    with st.container(key=f"ph_cap_{name}"):
+        st.caption(f"Tap a row to open that {noun}. Volumes are estimated from "
+                   f"{'the lowest figure' if vol_label == 'Min. volume' else 'the midpoint'} of each filed range.")
+    show(df[cols], key=name, ids=ids, goto=goto, name=name, desktop_only=True)
+    ids = list(ids)
+    with st.container(key=f"ph_{name}"):
+        slot = st.container()
+        for i, row in enumerate(df.itertuples()):
+            if i == 10:
+                slot = st.expander(f"Show ranks 11 to {len(df)}")
+            with slot:
+                text, args = f"{i + 1}. {label(row)}", dict(key=f"open_{name}_{i}", on_click=_open, args=(goto[0], goto[1], ids[i]))
+                try:
+                    st.button(text, icon=":material/chevron_right:", icon_position="right", **args)
+                except TypeError:                 # an older Streamlit without icon_position
+                    st.button(text, **args)
+    if download:
+        csv_button(df[cols], download)
+
+
+st.markdown("""
+<style>
+/* captions: higher contrast and a slightly larger size than Streamlit's default light grey */
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(0,0,0,.78) !important; font-size: .92rem !important; opacity: 1; }
+@media (prefers-color-scheme: dark) {
+  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: rgba(239,236,227,.82) !important; }
+}
+/* tap targets: at least 44px tall for expander headers and link buttons */
+[data-testid="stExpander"] summary, [data-testid="stLinkButton"] a { min-height: 44px; }
+/* radio: the unselected ring was the 20% rule colour (1.7:1); about 55% ink gives at least 3:1 */
+label[data-testid="stRadioOption"]:not([data-selected="true"]) > div > div:first-child { border-color: rgba(0,0,0,.55) !important; }
+/* radio: visible keyboard focus */
+label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; outline-offset: 2px; }
+/* links: primary is 4.25:1 on cream, too low for small text; link is 5.1:1 */
+[data-testid="stMarkdownContainer"] a { color: #3f6399; }
+@media (prefers-color-scheme: dark) {
+  label[data-testid="stRadioOption"]:not([data-selected="true"]) > div > div:first-child { border-color: rgba(239,236,227,.55) !important; }
+  label[data-testid="stRadioOption"]:focus-within { outline-color: #8fabd4; }
+  [data-testid="stMarkdownContainer"] a { color: #8fabd4; }
+}
+/* tabs (Ticker view): 44px tall, selected = bold plus underline, readable unselected text, visible keyboard focus; matched by role, not Streamlit's hashed classes */
+[role="tablist"] { overflow-x: auto; }
+[role="tab"] { min-height: 44px; padding: .5rem .9rem; color: rgba(0,0,0,.78); }
+[role="tab"], [role="tab"] * { font-size: 1rem; }
+[role="tab"][aria-selected="true"] { color: #000; font-weight: 700; box-shadow: inset 0 -3px 0 #4a70a9; }
+[role="tab"][aria-selected="true"] * { font-weight: 700; color: inherit; }
+[role="tab"]:focus-visible { outline: 2px solid #4a70a9; outline-offset: 2px; }
+[role="tab"] .react-aria-SelectionIndicator { display: none; }
+@media (prefers-color-scheme: dark) {
+  [role="tab"] { color: rgba(239,236,227,.82); }
+  [role="tab"][aria-selected="true"] { color: #efece3; box-shadow: inset 0 -3px 0 #8fabd4; }
+  [role="tab"]:focus-visible { outline-color: #8fabd4; }
+}
+/* broker table links (Ticker, Brokers tab): at least 44x44 to tap */
+.broker-table td a { display: inline-block; min-height: 44px; min-width: 44px; padding: .6rem .25rem; box-sizing: border-box; }
+/* metric values wrap at spaces instead of being cut off with an ellipsis ("NYSE American", "ETF / fund") */
+[data-testid="stMetric"] [data-testid="stMetricValue"] * { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; }
+/* just above the phone breakpoint the four-up columns are about 140px: a slightly smaller value keeps "$5,919.82" whole */
+@media (min-width: 641px) and (max-width: 720px) {
+  [data-testid="stMetricValue"], [data-testid="stMetricValue"] * { font-size: clamp(1.5rem, 5vw, 2.25rem); }
+}
+/* phone: metric strips two per row (Streamlit stacks columns one per row at 640px), values sized to fit */
+@media (max-width: 640px) {
+  [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] { flex: 0 0 calc(50% - .55rem); width: calc(50% - .55rem); min-width: 0; }
+  [data-testid="stMetricValue"], [data-testid="stMetricValue"] * { font-size: clamp(1.5rem, 7vw, 2.25rem); }
+}
+/* refresh button: full width on a phone, capped on wider screens */
+.st-key-refresh, .st-key-refresh [data-testid="stButton"], .st-key-refresh button { width: 100%; }
+@media (min-width: 641px) { .st-key-refresh button { max-width: 24rem; } }
+/* tap targets: buttons and each radio option (view switch, settings) at least 44px, wrapped rows spaced apart */
+[data-testid="stButton"] button, [data-testid="stDownloadButton"] button { min-height: 44px; }
+/* tables on a phone: each ranking / wide table has a desktop and a phone rendering in the page; CSS shows one at Streamlit's 640px breakpoint */
+@media (min-width: 641px) {
+  [class*="st-key-ph_"], [data-testid="stLayoutWrapper"]:has(> [class*="st-key-ph_"]) { display: none; }
+}
+@media (max-width: 640px) {
+  [class*="st-key-tbl_"], [data-testid="stLayoutWrapper"]:has(> [class*="st-key-tbl_"]) { display: none; }
+  /* compact phone tables: the table wraps to the container width; no sideways scroll, so a too-wide table shows up as page overflow */
+  [class*="st-key-ph_"] [data-testid="stTable"] > div { overflow-x: visible; }
+  [class*="st-key-ph_"] table { width: 100%; table-layout: auto; font-size: .85rem; }
+  [class*="st-key-ph_"] th, [class*="st-key-ph_"] td { padding: .35rem .3rem !important; white-space: normal; }
+  [class*="st-key-ph_"] th *, [class*="st-key-ph_"] td * { overflow-wrap: break-word !important; }
+  [class*="st-key-ph_"] td * { white-space: inherit !important; }        /* so the per-column nowrap set on the td applies */
+  [class*="st-key-ph_"] td { border-color: rgba(0,0,0,.2) !important; }
+  [class*="st-key-ph_"] th { text-align: left; font-weight: 600; color: inherit; border-bottom: 2px solid currentColor; }
+}
+/* ranking lists: full-width rows that wrap, left-aligned, 44px at least */
+[class*="st-key-ph_ov_"], [class*="st-key-ph_ov_"] [data-testid="stVerticalBlock"] { gap: .35rem; }
+[class*="st-key-open_ov_"], [class*="st-key-open_ov_"] [data-testid="stButton"], [class*="st-key-open_ov_"] button { width: 100%; }
+[class*="st-key-open_ov_"] button { justify-content: flex-start; text-align: left; height: auto; min-height: 44px; padding-top: .4rem; padding-bottom: .4rem; }
+[class*="st-key-open_ov_"] button, [class*="st-key-open_ov_"] button * { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+[class*="st-key-open_ov_"] button > div, [class*="st-key-open_ov_"] button > div > span { width: 100%; justify-content: space-between; }
+[class*="st-key-open_ov_"] [data-testid="stMarkdownContainer"] { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 640px) and (prefers-color-scheme: dark) { [class*="st-key-ph_"] td { border-color: rgba(239,236,227,.2) !important; } }
+/* 320px: five columns need tighter cell padding to fit without breaking words */
+@media (max-width: 359px) { [class*="st-key-ph_"] th, [class*="st-key-ph_"] td { padding-left: .1rem !important; padding-right: .1rem !important; } }
+/* 320px safety net: a table that is still too wide scrolls inside its own box (visible overflow stays at 360-640 so it shows up as a failure) */
+@media (max-width: 359px) { [class*="st-key-ph_"] [data-testid="stTable"] > div { overflow-x: auto; } }
+/* list rows: the boundary is ink at 55% (the rule colour was about 1.5:1) */
+[class*="st-key-open_ov_"] button { border-color: rgba(0,0,0,.55); }
+/* keyboard focus: the same ring as the radios on buttons and checkboxes (Streamlit's own glow is about 1.9:1) */
+[data-testid="stButton"] button:focus-visible, [data-testid="stDownloadButton"] button:focus-visible,
+[data-testid="stCheckbox"] label:has(input:focus-visible) { outline: 2px solid #4a70a9; outline-offset: 2px; }
+@media (prefers-color-scheme: dark) {
+  [class*="st-key-open_ov_"] button { border-color: rgba(239,236,227,.55); }
+  [data-testid="stButton"] button:focus-visible, [data-testid="stDownloadButton"] button:focus-visible,
+  [data-testid="stCheckbox"] label:has(input:focus-visible) { outline-color: #8fabd4; }
+}
+/* checkboxes: 44px rows ("Show all columns", "Only ...") */
+[data-testid="stCheckbox"] label { min-height: 44px; align-items: center; }
+label[data-testid="stRadioOption"] { min-height: 44px; align-items: center; }
+[data-testid="stRadioGroup"] { row-gap: .25rem; }
+</style>
+""", unsafe_allow_html=True)
 st.title("Congress trades")
-if db.has_sample_data(con):
-    st.warning("Sample data is loaded: the members marked *(fictional)* and their trades are invented demo rows. "
-               "Run `python load_sample.py --purge` to remove them.")
-st.caption("Volume is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in the sidebar). "
-           "Filings can lag trades by up to 45 days. Committee data is a current snapshot, "
-           "not membership as of each trade date.")
+VIEWS = ["Overview", "Member", "Committee", "Ticker"]
+SELECT_KEYS = {"Member": "member_sel", "Committee": "committee_sel", "Ticker": "ticker_sel"}
+if "page" not in st.session_state:        # first load of this session: restore the view from a shared link
+    qp = st.query_params
+    if qp.get("view") in VIEWS:
+        st.session_state["page"] = qp["view"]
+        if qp.get("view") in SELECT_KEYS and qp.get("id"):
+            st.session_state[SELECT_KEYS[qp["view"]]] = qp["id"]
 
-known, total = db.sector_coverage(con)
-if total:
-    st.caption(f"Sector is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%). Sectors come from the FinanceDatabase classification "
-               "and are approximate; the committee-relevance flag only applies where a sector is known.")
 
-paper = db.paper_filings(con)
-if not paper.empty:
-    st.info(f"**Coverage gap:** {len(paper)} paper filings from {paper['bioguide_id'].nunique()} members are not "
-            "imported (scanned forms with handwritten or ticked-box entries can't be read reliably). "
-            "A member with no trades listed here may still have traded.")
-    with st.expander("Which filings are missing?"):
-        st.dataframe(paper[["member", "year", "doc_id", "url"]], hide_index=True, use_container_width=True,
-                     column_config={"url": st.column_config.LinkColumn("Original filing", display_text="open PDF"),
-                                    "doc_id": "Filing ID", "year": "Year", "member": "Member"})
+def sync_url(view, selected=None):
+    """Mirror the current view (and selected item) into the URL so it can be bookmarked or shared."""
+    params = {"view": view}
+    if selected:
+        params["id"] = str(selected)
+    if dict(st.query_params) != params:
+        st.query_params.from_dict(params)
 
-page = st.sidebar.radio("View", ["Overview", "Member", "Committee", "Ticker"])
-basis = st.sidebar.radio(
-    "Volume basis", ["Midpoint estimate", "Filed minimum"],
-    help="Filings give ranges, some very wide ($5M-$25M). The midpoint can overstate a trade; "
-         "the filed minimum is a conservative lower bound.")
-db.set_basis("min" if basis == "Filed minimum" else "mid")
-vol_label = "Volume (filed minimum)" if basis == "Filed minimum" else "Est. volume (midpoint)"
-CURRENCY = st.sidebar.radio(
-    "Currency", ["USD", "EUR"] if RATE else ["USD"],
-    help="Filings and prices are in US dollars. EUR uses the latest ECB reference rate for ALL amounts, "
-         "including past trades (not the rate on the trade date).")
-if RATE:
-    st.sidebar.caption(f"ECB rate: €1 = ${RATE:.4f} ({RATE_DATE})")
-else:
-    st.sidebar.caption("No EUR rate stored yet; it is fetched by the nightly update.")
-have, total_t, newest = db.price_freshness(con)
-if newest:
-    st.sidebar.caption(f"Prices: end-of-day closes, newest {newest}; {have:,} of {total_t:,} tickers have one.")
-if st.sidebar.button("Refresh data from GitHub"):
+
+# Click-through from a table row: set the target view and its selectbox BEFORE those widgets are created.
+_goto = st.session_state.pop("_goto", None)
+if _goto:
+    st.session_state["page"], st.session_state[_goto[1]] = _goto[0], _goto[2]
+page = st.radio("View", VIEWS, key="page", horizontal=True, label_visibility="collapsed")
+with st.expander("Settings"):
+    basis = st.radio(
+        "Volume basis", ["Midpoint estimate", "Filed minimum"], key="basis", horizontal=True)
+    st.caption("Filings give ranges, some very wide (\\$5M-\\$25M): the midpoint can overstate a trade; "
+               "the filed minimum is a conservative lower bound.")
+    currency_opts = ["USD", "EUR"] if RATE else ["USD"]
+    if st.session_state.get("currency") not in (None, *currency_opts):
+        st.session_state.pop("currency")     # e.g. EUR chosen, then a refresh left no stored rate
+    CURRENCY = st.radio(
+        "Currency", currency_opts, key="currency", horizontal=True)
+    st.caption("Filings and prices are in US dollars. EUR uses the latest ECB reference rate for all amounts, "
+               "including past trades.")
+    if RATE:
+        st.caption(f"ECB rate: €1 = ${RATE:.4f} ({RATE_DATE})")
+    else:
+        st.caption("No EUR rate stored yet; it is fetched by the nightly update.")
+    have, total_t, newest = db.price_freshness(con)
+    if newest:
+        st.caption(f"Prices: end-of-day closes, newest {newest}; {have:,} of {total_t:,} tickers have one.")
+    refresh = st.button("Refresh data from GitHub", key="refresh")
+err_slot = st.container()                    # outside the collapsed expander, so a failure is visible
+if refresh:
     try:
         download_db()
         st.rerun()
     except Exception as e:
-        st.sidebar.error(f"Refresh failed: {e}")
+        err_slot.error(f"**Refresh failed:** {e}")
+db.set_basis("min" if basis == "Filed minimum" else "mid")
+vol_label = "Min. volume" if basis == "Filed minimum" else "Est. volume"          # metric label (18 characters at most)
+LABELS["est_volume"] = st.column_config.NumberColumn(vol_label)       # grid and compact-table header follow the basis
+vol_full = "Volume (filed minimum)" if basis == "Filed minimum" else "Est. volume (midpoint)"   # full basis name for tooltips
+
+if db.has_sample_data(con):
+    st.warning("Sample data is loaded: the members marked *(fictional)* and their trades are invented demo rows. "
+               "Run `python load_sample.py --purge` to remove them.")
+known, total = db.sector_coverage(con)
+paper = db.paper_filings(con)
+if not paper.empty:
+    n_members = paper["bioguide_id"].nunique()
+    gap = (f"{len(paper)} paper filing{'s' if len(paper) != 1 else ''} not imported "
+           f"({n_members} member{'s' if n_members != 1 else ''}).")
+    st.caption(f"**Coverage gap:** {gap} Details under About this data.")
+with st.expander("About this data"):
+    st.markdown(
+        "- **Volume** is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in Settings).\n"
+        "- **Filings lag trades** by up to 45 days, so a trade is old news by the time it is public.\n"
+        "- **Committee data** is a current snapshot, not membership as of each trade date.\n"
+        + (f"- **Sector** is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%), from the FinanceDatabase "
+           "classification; sectors are approximate and the committee-relevance flag only applies where a sector is known.\n" if total else ""))
+    if not paper.empty:
+        st.markdown("Some members may have traded more than shown. Filings not imported:")
+        rows = "\n".join(f"| {r.member} | {r.year} | [Open filing {r.doc_id} (PDF)]({r.url}) |" for r in paper.itertuples())
+        st.markdown("| Member | Year | Filing |\n|---|---|---|\n" + rows)
 
 if page == "Overview":
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Most active members")
-        show(db.members_with_trades(con)[["name", "chamber", "party", "trades", "est_volume"]].head(25))
-    with c2:
-        st.subheader("Committees by trading volume")
-        show(db.committees_with_trading(con)[["name", "members", "trades", "est_volume"]].head(25))
+    sync_url("Overview")
+    stats = db.overview_stats(con)
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Trades", f"{stats['trades']:,}")
+    k2.metric("Members", f"{stats['members']:,}", help="Members of Congress with at least one imported trade.")
+    k3.metric(vol_label, short(stats["volume"]), help=esc(f"{vol_full}. Exact: {usd(stats['volume'])}"))
+    newest_d = pd.to_datetime(stats["newest"]) if stats["newest"] else None
+    k4.metric("Latest filing", newest_d.strftime("%d %b" if newest_d.year == pd.Timestamp.today().year else "%d %b %Y") if newest_d is not None else "n/a",
+              help=f"Newest disclosure date in the data: {stats['newest']}" if stats["newest"] else None)
+    vol_caption(stats["volume"], ", summed over all trades")
+    st.subheader("Most active members")
+    top_members = db.members_with_trades(con).head(25)
+    ranking("ov_members", top_members, ["name", "party", "trades", "est_volume"], top_members["bioguide_id"],
+            ("Member", "member_sel"), "member",
+            lambda r: "\u00a0· ".join(x for x in (
+                md_esc(r.name) + (f" ({md_esc(r.party)})" if _has(r.party) else "") if _has(r.name) else "",
+                n_trades(r.trades), md_esc(short(r.est_volume))) if x))
+    st.subheader("Committees by trading volume")
+    top_committees = db.committees_with_trading(con).head(25)
+    ranking("ov_committees", top_committees, ["name", "trades", "est_volume"], top_committees["id"],
+            ("Committee", "committee_sel"), "committee",
+            lambda r: "\u00a0· ".join(x for x in (md_esc(r.name) if _has(r.name) else "", n_trades(r.trades), md_esc(short(r.est_volume))) if x))
     st.subheader("Monthly estimated volume")
     mv = db.monthly_volume(con)
     if not mv.empty:
-        st.bar_chart(mv.pivot(index="month", columns="tx_type", values="est_volume").fillna(0))
+        mv = mv.copy()
+        mv["est_volume"] = mv["est_volume"].map(conv)
+        cur = "EUR" if CURRENCY == "EUR" and RATE else "USD"
+        types = ["Purchase", "Sale", "Sale (Partial)", "Exchange"]
+        palette = ["#0072B2", "#D55E00", "#E69F00", "#7F7F7F"]      # colour-blind-safe (Okabe-Ito) hues
+        try:
+            is_light = st.context.theme.type != "dark"
+        except Exception:
+            is_light = True
+        bar_outline = {"stroke": "rgba(0,0,0,0.6)", "strokeWidth": 1} if is_light else {}   # chart-partial is only 1.9:1 on cream
+        chart = (alt.Chart(mv, title=f"Estimated trade volume per month ({cur}, by trade date)")
+                 .mark_bar(**bar_outline)
+                 .encode(x=alt.X("month:O", title="Month", axis=alt.Axis(labelAngle=-45, labelOverlap="parity")),
+                         y=alt.Y("est_volume:Q", title=f"Estimated volume ({cur})", axis=alt.Axis(format="~s")),
+                         color=alt.Color("tx_type:N", title="Type", scale=alt.Scale(domain=types, range=palette)),
+                         order=alt.Order("tx_type:N"),
+                         tooltip=[alt.Tooltip("month:O", title="Month"), alt.Tooltip("tx_type:N", title="Type"),
+                                  alt.Tooltip("est_volume:Q", title=f"Volume ({cur})", format=",.0f")])
+                 .properties(height=320))
+        st.altair_chart(chart, use_container_width=True)
+        with st.expander("Show the chart data as a table"):
+            table = (mv.pivot(index="month", columns="tx_type", values="est_volume").fillna(0)
+                     .sort_index(ascending=False).reset_index().rename(columns={"month": "Month"}))
+            st.dataframe(table.style.format({c: sym() + "{:,.0f}" for c in table.columns if c != "Month"}),
+                         hide_index=True, use_container_width=True)
     st.subheader("Top tickers")
-    show(db.top_tickers(con, 20))
+    top_t = db.top_tickers(con, 20)
+    ranking("ov_tickers", top_t, list(top_t.columns), top_t["ticker"], ("Ticker", "ticker_sel"), "ticker",
+            lambda r: "\u00a0· ".join(x for x in (md_esc(r.ticker), md_esc(r.name) if _has(r.name) else "",
+                                             n_trades(r.trades), md_esc(short(r.est_volume))) if x),
+            download="top_tickers")
 
 elif page == "Member":
     members = db.members_with_trades(con)
@@ -178,7 +496,10 @@ elif page == "Member":
     labels = {r.bioguide_id: f"{r.name} ({r.chamber}, {r.state or ''})" for r in members.itertuples()}
     labels.update({r.bioguide_id: f"{r.name} ({r.chamber}, {r.state or ''}) - paper filings only"
                    for r in only_paper.itertuples()})
-    bid = st.selectbox("Member", list(labels), format_func=labels.get)
+    if st.session_state.get("member_sel") not in labels:      # e.g. a stale id from a shared link
+        st.session_state.pop("member_sel", None)
+    bid = st.selectbox("Member", list(labels), format_func=labels.get, key="member_sel")
+    sync_url("Member", bid)
     mc = db.member_committees(con, bid)
     tr = db.member_trades(con, bid)
     mp = db.paper_filings(con, bid)
@@ -187,13 +508,22 @@ elif page == "Member":
                    "incomplete: " + ", ".join(f"[{r.doc_id}]({r.url})" for r in mp.itertuples()))
     a, b, c = st.columns(3)
     a.metric("Trades", len(tr))
-    b.metric(vol_label, usd(db.volume_of(tr)))
-    relevant_metric(c, tr, bool(db.member_sectors(con, bid)))
+    vol = db.volume_of(tr)
+    b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
+    sectors_known = bool(db.member_sectors(con, bid))
+    relevant_metric(c, tr, sectors_known)
+    vol_caption(vol)
+    if not sectors_known:
+        st.caption(NO_SECTORS_NOTE["Member"])
     st.subheader("Committees")
-    show(mc[["name", "title", "as_of"]])
+    if mc.empty:
+        st.info("No current committee assignments in the data for this member.")
+    else:
+        show(mc[["name", "title", "as_of"]])
     st.subheader("Trades")
     only_rel = st.checkbox("Only committee-relevant (sector heuristic)")
-    show(tr[tr["committee_relevant"]] if only_rel else tr)
+    show(tr[tr["committee_relevant"]] if only_rel else tr, download=f"trades_{bid}",
+         phone_cols=["tx_date", "ticker", "tx_type", "amount_est"], name="member_trades")
 
 elif page == "Committee":
     ct = db.committees_with_trading(con)
@@ -201,72 +531,97 @@ elif page == "Committee":
         st.info("No trades loaded yet.")
         st.stop()
     labels = dict(zip(ct["id"], ct["name"]))
-    cid = st.selectbox("Committee", list(labels), format_func=labels.get)
+    if st.session_state.get("committee_sel") not in labels:
+        st.session_state.pop("committee_sel", None)
+    cid = st.selectbox("Committee", list(labels), format_func=labels.get, key="committee_sel")
+    sync_url("Committee", cid)
     cm = db.committee_members(con, cid)
     tr = db.committee_trades(con, cid)
     a, b, c = st.columns(3)
-    a.metric("Members with trades", int((cm["trades"] > 0).sum()))
-    b.metric(vol_label, usd(db.volume_of(tr)))
-    relevant_metric(c, tr, bool(db.committee_sectors(cid)))
+    a.metric("Members trading", int((cm["trades"] > 0).sum()))
+    vol = db.volume_of(tr)
+    b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
+    sectors_known = bool(db.committee_sectors(cid))
+    relevant_metric(c, tr, sectors_known)
+    vol_caption(vol)
+    if not sectors_known:
+        st.caption(NO_SECTORS_NOTE["Committee"])
     st.subheader("Members")
     only_traders = st.checkbox("Only members with trades", value=True)
     if only_traders:
         cm = cm[cm["trades"] > 0]
-    show(cm[["name", "chamber", "party", "title", "trades", "est_volume"]])
+    show(cm[["name", "chamber", "party", "title", "trades", "est_volume"]],
+         phone_cols=["name", "party", "trades", "est_volume"], name="committee_members")
     st.subheader("Trades by members of this committee")
-    show(tr)
+    show(tr, download=f"committee_{cid}_trades",
+         phone_cols=["member", "tx_date", "ticker", "tx_type", "amount_est"], name="committee_trades")
 
 else:
     tickers = db.all_tickers(con)
     if not tickers:
         st.info("No trades loaded yet.")
         st.stop()
-    t = st.selectbox("Ticker", tickers)
+    if st.session_state.get("ticker_sel") not in tickers:
+        st.session_state.pop("ticker_sel", None)
+    t = st.selectbox("Ticker", tickers, key="ticker_sel")
+    sync_url("Ticker", t)
     prof = db.ticker_profile(con, t)
     df = db.ticker_summary(con, t)
     st.subheader(f"{t}" + (f" - {prof['name']}" if prof["name"] else ""))
-    a, b, c, d = st.columns(4)
-    if prof["price"] is not None:
-        a.metric("Last close", f"${prof['price']:,.2f}",
-                 delta=f"{100 * (prof['price'] / prof['prev_close'] - 1):+.1f}% on the day" if prof["prev_close"] else None)
-        b.metric("Last close (EUR)", f"€{prof['price'] / RATE:,.2f}" if RATE else "n/a",
-                 help="USD close converted at the latest ECB rate." if RATE else "No EUR rate stored yet.")
-    else:
-        a.metric("Last close", "n/a", help="No price found for this ticker (delisted, renamed, not a plain stock, or not fetched yet).")
-        b.metric("Last close (EUR)", "n/a")
-    c.metric("Exchange", prof["exchange"] or "unknown")
-    d.metric("Type", {"equity": "Stock", "etf": "ETF / fund"}.get(prof["kind"], "unknown"))
-    if prof["as_of"]:
-        st.caption(f"Price is the end-of-day close on {prof['as_of']}, refreshed nightly; it is not a live quote. "
-                   "Trades below were disclosed up to 45 days after they happened.")
-    if prof["kind"] != "etf":
-        a, b, c = st.columns(3)
-        na = "n/a"
-        a.metric("P/E (trailing)", f"{prof['pe']:.1f}" if prof["pe"] else na,
-                 help="Price / earnings over the last 12 months. n/a when the company has no positive earnings or Yahoo has no data.")
-        b.metric("Forward P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na,
-                 help="Price / analysts' expected earnings for the next 12 months.")
-        c.metric("PEG ratio", f"{prof['peg']:.2f}" if prof["peg"] else na,
-                 help="P/E divided by expected earnings growth. Definitions differ between data providers, so compare "
-                      "companies using the same source only. n/a when growth is unknown or negative.")
-        st.caption("Ratios come from Yahoo Finance, refreshed nightly, and are shown for reference: a low or high number is not "
-                   "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies).")
-    a, b = st.columns(2)
-    a.metric("Trades", len(df))
-    b.metric(vol_label, usd(db.volume_of(df)))
-    show(df)
+    st.caption("This is information, not investment advice.")
+    tab_trades, tab_price, tab_brokers = st.tabs(["Trades", "Price", "Brokers"])
+    with tab_trades:
+        a, b = st.columns(2)
+        a.metric("Trades", len(df))
+        vol = db.volume_of(df)
+        b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
+        vol_caption(vol)
+        st.caption("Trades were disclosed up to 45 days after they happened.")
+        show(df, download=f"ticker_{t}_trades", phone_cols=["member", "tx_date", "tx_type", "amount_est"], name="ticker_trades")
 
-    st.subheader("Where can I buy it from the Netherlands?")
-    verdict, per = brokers.availability(prof["kind"], prof["exchange_code"])
-    st.write(verdict)
-    if prof["kind"] == "etf":
-        st.info(brokers.ETF_NOTE)
-    bt = pd.DataFrame([{"Broker": x["name"], "Can I buy it?": per[x["name"]], "Site": x["url"], "Notes": x["note"]}
-                       for x in brokers.BROKERS])
-    st.dataframe(bt, hide_index=True, use_container_width=True,
-                 column_config={"Site": st.column_config.LinkColumn("Site", display_text="open"),
-                                "Notes": st.column_config.TextColumn("Notes", width="large")})
-    st.caption(f"Compiled by hand, last reviewed {brokers.REVIEWED}: broker offerings and fees change, so confirm on the "
-               "broker's site. Pick a broker supervised in the EU (check the AFM register). Dutch residents should also file a "
-               "W-8BEN with their broker so US dividends are withheld at 15% instead of 30%. This is information, not "
-               "investment advice; because of the filing delay, a politician's trade is old news by the time it is public.")
+    with tab_price:
+        a, b, c, d = st.columns(4)
+        if prof["price"] is not None:
+            a.metric("Close (USD)", f"${prof['price']:,.2f}",
+                     delta=f"{100 * (prof['price'] / prof['prev_close'] - 1):+.1f}% on the day" if prof["prev_close"] else None)
+            b.metric("Close (EUR)", f"€{prof['price'] / RATE:,.2f}" if RATE else "n/a",
+                     help="USD close converted at the latest ECB rate." if RATE else "No EUR rate stored yet.")
+        else:
+            a.metric("Close (USD)", "n/a")
+            b.metric("Close (EUR)", "n/a")
+        c.metric("Exchange", prof["exchange"] or "unknown")
+        d.metric("Type", {"equity": "Stock", "etf": "ETF / fund"}.get(prof["kind"], "unknown"))
+        if not prof["as_of"]:
+            st.caption("No price found for this ticker (delisted, renamed, not a plain stock, or not fetched yet).")
+        else:
+            st.caption(f"Price is the end-of-day close on {prof['as_of']}, refreshed nightly; it is not a live quote.")
+        if prof["kind"] != "etf":
+            a, b, c = st.columns(3)
+            na = "n/a"
+            a.metric("P/E", f"{prof['pe']:.1f}" if prof["pe"] else na)
+            b.metric("Fwd P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na)
+            c.metric("PEG", f"{prof['peg']:.2f}" if prof["peg"] else na)
+            st.caption("Ratios come from Yahoo Finance, refreshed nightly, and are shown for reference: a low or high number is not "
+                       "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies).")
+            st.caption("P/E is price over the last 12 months of earnings, Fwd P/E uses expected earnings for the next 12 months, "
+                       "and PEG is P/E divided by expected earnings growth. n/a means no positive earnings, no growth figure or no data.")
+    with tab_brokers:
+        st.subheader("Where can I buy it from the Netherlands?")
+        verdict, per = brokers.availability(prof["kind"], prof["exchange_code"])
+        st.write(verdict)
+        if prof["kind"] == "etf":
+            st.info(brokers.ETF_NOTE)
+        for x in brokers.BROKERS:
+            with st.expander(f"{x['name']}: {per[x['name']]}"):
+                st.write(x["note"])
+                st.link_button(f"Open {x['name']}", x["url"])
+        with st.expander("Show the brokers as a table"):
+            st.caption("On a narrow screen, scroll sideways inside the table to see the Link column.")
+            trs = "".join(f"<tr><td>{html.escape(x['name'])}</td><td>{html.escape(per[x['name']])}</td><td>{html.escape(x['note'])}</td>"
+                          f"<td><a href=\"{html.escape(x['url'])}\">Open {html.escape(x['name'])}</a></td></tr>" for x in brokers.BROKERS)
+            st.markdown('<div class="broker-table" style="overflow-x: auto"><table><thead><tr><th>Broker</th><th>Can I buy it?</th><th>Notes</th><th>Link</th>'
+                        f"</tr></thead><tbody>{trs}</tbody></table></div>", unsafe_allow_html=True)   # real HTML table: screen-reader friendly
+        st.caption(f"Compiled by hand, last reviewed {brokers.REVIEWED}: broker offerings and fees change, so confirm on the "
+                   "broker's site. Pick a broker supervised in the EU (check the AFM register). Dutch residents should also file a "
+                   "W-8BEN with their broker so US dividends are withheld at 15% instead of 30%. This is information, not "
+                   "investment advice; because of the filing delay, a politician's trade is old news by the time it is public.")

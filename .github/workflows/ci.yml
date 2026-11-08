@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["*.md"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt reportlab
+
+      - name: Fetch the published database
+        run: |
+          git fetch --depth=1 origin data
+          git show FETCH_HEAD:congress.db > congress.db
+          du -h congress.db
+
+      - name: Unit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          { for t in tests/test_*.py; do echo "== $t"; python "$t"; done; } 2>&1 | tee ci-unit.log
+
+      - name: UI smoke test (every view, many members / committees / tickers)
+        shell: bash
+        run: |
+          set -o pipefail
+          python tests/ui_smoke.py 2>&1 | tee ci-ui.log
+
+      - name: Publish logs as annotations
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          for path in ("ci-unit.log", "ci-ui.log"):
+              if not os.path.exists(path):
+                  continue
+              lines = open(path, errors="replace").read().splitlines()
+              bad = [l for l in lines if "::error" in l or "Traceback" in l or "Error" in l][:15]
+              body = "\n".join(l[:400] for l in (bad + ["--- tail ---"] + lines[-25:]))[:9000]
+              body = body.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+              print(f"::notice title={path}::{body}")
+          PY

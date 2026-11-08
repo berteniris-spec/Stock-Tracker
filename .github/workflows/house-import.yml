@@ -62,6 +62,7 @@ jobs:
             python tests/test_house_importer.py
             python tests/test_enrich_sectors.py
             python tests/test_prices.py
+            python tests/test_db_queries.py
             python ingest_committees.py
             python house_importer.py --year "${YEAR_IN:-$(date +%Y)}" ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }}
             python enrich_sectors.py || echo "sector enrichment failed (continuing without it)"

@@ -69,8 +69,39 @@ can't be classified this way.
   database, refreshes committees, imports only new filings, and force-pushes `congress.db` to the `data`
   branch (a single commit, so history doesn't grow). Run it with a `year` to backfill an earlier year.
 - The app downloads the database from that branch on first start (`DB_URL` overrides the location), and the
-  sidebar has a **Refresh data from GitHub** button. A local `congress.db` is never overwritten unless you press it.
+  collapsed **Settings** section (under the view switch) has a **Refresh data from GitHub** button. A local `congress.db` is never overwritten unless you press it.
 - Deploy `app.py` on Streamlit Community Cloud from this repo's `main` branch; no secrets are needed because
   the repo is public.
 - The underlying filings are public records. Keep use non-commercial (the Clerk's terms bar commercial and
   fundraising use) and don't hammer the site: the importer rate-limits and caches.
+
+
+## Development loop
+
+Every change goes through the same cycle: **build, test, document**.
+
+1. **Build** the change on `main` (small commits).
+2. **Test** locally with `for t in tests/test_*.py; do .venv/bin/python $t; done` (offline unit tests; `.venv/bin/python` locally, plain `python` in CI and the cloud where there is no venv). Pushing triggers the
+   `CI` workflow, which also runs `tests/ui_smoke.py`: it drives the real Streamlit app headlessly through every view
+   and many members, committees and tickers, in USD and EUR, and fails on any exception.
+   `scripts/wait_ci.sh` waits for the run and prints the result.
+3. **Check live**: reload the deployed app and look at the changed views (Streamlit Cloud redeploys on push; press
+   "Refresh data from GitHub" for new data).
+4. **Document**: add an entry to `CHANGELOG.md` (what changed, how it was verified) and update this README if behaviour
+   or setup changed.
+
+In Claude Code, `/ship` runs the tests, checks the docs, then commits and pushes on a branch (it stops before a PR or
+merge), `/resume` summarises the project state read-only, and `/ui-check` runs `.venv/bin/python scripts/ui_check.py` and reviews
+the screenshots. The script screenshots the four views at 390px and 1280px in light and dark and reports sideways
+scroll, overflow and small tap targets (exit 0 clean, 1 overflow or load failure, 2 environment problem). Playwright is
+not in `requirements.txt`: the Python that runs the script must import both `playwright` and `streamlit`, and the
+Playwright version must match the installed Chromium (1.56.0 for chromium-1194 in the cloud image; on a Mac set `PLAYWRIGHT_BROWSERS_PATH` to a folder and run `.venv/bin/python -m playwright install chromium`). `.claude/settings.json` also sets
+permissions: read-only git, `ls` and the tests run without asking; `git add`, `commit` and `push` ask; `rm`, `mv`,
+`curl` and `wget` are denied.
+
+For Claude Code, `CLAUDE.md` points to `AGENTS.md` and `docs/CONTEXT.md`, and three hooks in `.claude/settings.json`
+help: a cloud session start installs dependencies and fetches `congress.db`; edits to the database, workflows and
+theme ask for confirmation; and stopping runs the unit tests when a `.py` file changed and warns if `CHANGELOG.md`
+was not updated.
+
+The nightly `House import` workflow refreshes the data; CI never changes data.
