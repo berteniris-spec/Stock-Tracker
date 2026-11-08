@@ -95,7 +95,7 @@ merge), `/resume` summarises the project state read-only, and `/ui-check` runs `
 the screenshots. The script screenshots the four views at 390px and 1280px in light and dark and reports sideways
 scroll, overflow and small tap targets (exit 0 clean, 1 overflow or load failure, 2 environment problem). Playwright is
 not in `requirements.txt`: the Python that runs the script must import both `playwright` and `streamlit`, and the
-Playwright version must match the installed Chromium (1.56.0 for chromium-1194). `.claude/settings.json` also sets
+Playwright version must match the installed Chromium (1.56.0 for chromium-1194). If the browsers are not in `/opt/pw-browsers` (for example on a Mac), set `PLAYWRIGHT_BROWSERS_PATH` (macOS default `$HOME/Library/Caches/ms-playwright`) or the script exits 2. `.claude/settings.json` also sets
 permissions: read-only git, `ls` and the tests run without asking; `git add`, `commit` and `push` ask; `rm`, `mv`,
 `curl` and `wget` are denied.
 

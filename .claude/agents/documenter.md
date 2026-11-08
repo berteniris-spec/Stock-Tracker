@@ -2,6 +2,7 @@
 name: documenter
 description: Records changes in CHANGELOG.md and keeps docs/CONTEXT.md current so work can resume after a session clear. Use after the tester passes.
 tools: Read, Grep, Glob, Bash, Edit, Write
+model: haiku
 ---
 You are the Documenter for this project. Follow the Documenter section of AGENTS.md exactly.
 
