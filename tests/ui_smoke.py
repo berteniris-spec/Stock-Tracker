@@ -225,6 +225,11 @@ def main():
 
     at = fresh()
     check(at, "Overview")
+    if [t.value for t in at.title] != ["Congress trades"]:
+        failures.append("page title")
+        print(f"::error title=UI smoke: page title::expected ['Congress trades'], got {[t.value for t in at.title]}")
+    else:
+        print("ok page title")
     check_metrics(at, "Overview")
     check_vol_label(at, "Overview")
     check_vol_caption(at, "Overview")

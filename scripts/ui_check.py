@@ -372,6 +372,37 @@ def wait_ready(page):
         pass
 
 
+LOGO_JS = r"""
+() => {
+  const img = document.querySelector('.st-key-brand img');
+  const h1 = document.querySelector('[data-testid="stMain"] h1');
+  if (!img) return {missing: true, h1: h1 ? h1.innerText.trim() : ''};
+  const r = img.getBoundingClientRect();
+  return {missing: false, complete: img.complete, nw: img.naturalWidth, alt: img.getAttribute('alt'),
+          left: r.left, right: r.right, vw: document.documentElement.clientWidth,
+          h1: h1 ? h1.innerText.trim() : ''};
+}
+"""
+
+
+def logo_findings(page):
+    """The logo above the title: present, decoded, inside the viewport, with its alt text; the h1 text is unchanged."""
+    d = page.evaluate(LOGO_JS)
+    bad = []
+    if d["missing"]:
+        bad.append("no .st-key-brand img")
+    else:
+        if not d["complete"] or d["nw"] <= 0:
+            bad.append("image not loaded")
+        if d["left"] < -0.5 or d["right"] > d["vw"] + 0.5:
+            bad.append(f"outside viewport ({d['left']:.0f}..{d['right']:.0f} of {d['vw']})")
+        if d["alt"] != "StockTrader logo":
+            bad.append(f"alt is {d['alt']!r}")
+    if d["h1"] != "Congress trades":
+        bad.append(f"h1 is {d['h1']!r}")
+    return bad
+
+
 def shoot(browser, url, view, width, theme, out):
     from playwright.sync_api import TimeoutError as PWTimeout
     ctx = browser.new_context(viewport={"width": width, "height": HEIGHT}, color_scheme=theme)
@@ -382,6 +413,7 @@ def shoot(browser, url, view, width, theme, out):
         path = out / f"{view.lower()}_{width}_{theme}.png"
         page.screenshot(path=str(path), full_page=True)
         r = page.evaluate(JS)
+        logo = logo_findings(page)
         rank = ranking_findings(page, width) if view == "Overview" else []
         tabs_bad, tabs_notes, tab_layouts = ticker_tab_findings(page, width) if view == "Ticker" else ([], [], [])
         if page.query_selector(SKELETON) or not page.evaluate(HAS_CONTENT):  # loading restarted or content vanished
@@ -408,6 +440,8 @@ def shoot(browser, url, view, width, theme, out):
     if width == 390 and r["small"]:
         parts.append(f"advisory, {len(r['small'])} targets under 44x44: "
                      + "; ".join(r["small"][:5]))
+    if logo:
+        parts.append("logo: " + "; ".join(logo))
     if rank:
         parts.append("ranking tables: " + "; ".join(rank))
     if tabs_bad:
@@ -428,7 +462,7 @@ def shoot(browser, url, view, width, theme, out):
     if r["sidebar"]:
         parts.append("advisory, sidebar or toggle still present")
     print(f"{view} {width} {theme}: {'ISSUES ' + ' | '.join(parts) if parts else 'PASS'}  {path}")
-    return bool(r["pageScroll"]) or bool(rank) or bool(tabs_bad) or tab_scroll
+    return bool(r["pageScroll"]) or bool(logo) or bool(rank) or bool(tabs_bad) or tab_scroll
 
 
 if __name__ == "__main__":
