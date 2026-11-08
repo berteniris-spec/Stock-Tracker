@@ -5,3 +5,6 @@ congress.db
 .venv/
 .claude/settings.local.json
 .claude/.cache/
+
+# Contentsquare wizard (generated)
+.cs-wizard/
