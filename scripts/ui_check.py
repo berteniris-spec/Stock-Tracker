@@ -11,6 +11,9 @@ opened, and EUR and the Filed minimum basis are not captured. A sidebar or its t
 page is reported as an advisory line and never changes the exit code.
 Overview only: at 390 every ranking list button must be 44px tall and inside the viewport and no ranking table may
 show; at 1280 the ranking tables show and the lists do not. A failure there exits 1 like page-level overflow.
+Ticker only: each tab (Trades, Price, Brokers) is clicked and measured like the page; every tab must be 44px tall and
+inside the viewport at 390, the page must not scroll sideways at 320 (an extra 320 light shot), the Trades tab must show
+the phone table at 640 and narrower and the grid above, and the 390 page height is reported per tab. Failures there exit 1.
 Exit codes: 0 clean, 1 page-level overflow, a ranking failure or did not finish loading, 2 environment problem.
 """
 import argparse
@@ -137,6 +140,56 @@ def ranking_findings(page, width):
     return out
 
 
+TAB_JS = r"""
+() => {
+  const vw = document.documentElement.clientWidth;
+  const shown = (el) => { const r = el.getBoundingClientRect(); return el.checkVisibility({checkVisibilityCSS: true}) && r.width > 0 && r.height > 0; };
+  const main = document.querySelector('[data-testid="stMain"]');
+  const tabs = [...document.querySelectorAll('[role="tab"]')].map((t) => { const r = t.getBoundingClientRect();
+    return {name: t.innerText.trim(), h: Math.round(r.height), inside: r.left >= -1 && r.right <= vw + 1}; });
+  const ph = document.querySelector('[class*="st-key-ph_ticker_trades"]'), grid = document.querySelector('[class*="st-key-tbl_ticker_trades"]');
+  return {tabs: tabs, height: main ? main.scrollHeight : 0, ph: ph ? shown(ph) : null, grid: grid ? shown(grid) : null,
+          panels: [...document.querySelectorAll('[role="tabpanel"]')].filter(shown).length};
+}
+"""
+
+
+def ticker_tab_findings(page, width):
+    """Click each Ticker tab and measure it. Returns (problems that fail the run, advisory lines, page layout findings per tab)."""
+    bad, notes, layouts = [], [], []
+    names = [t.inner_text().strip() for t in page.query_selector_all('[role="tab"]')]
+    if names != ["Trades", "Price", "Brokers"]:
+        return [f"tabs are {names}, expected Trades, Price, Brokers"], notes, layouts
+    heights = []
+    for name in names:
+        page.locator('[role="tab"]', has_text=name).click()
+        page.wait_for_timeout(600)
+        if name == "Brokers":  # open every broker expander so their content is measured too
+            for summary in page.query_selector_all('[role="tabpanel"] summary'):
+                summary.click()
+            page.wait_for_timeout(500)
+        r = page.evaluate(TAB_JS)
+        layouts.append((name, page.evaluate(JS)))
+        heights.append(f"{name} {r['height']}px")
+        if r["panels"] != 1:
+            bad.append(f"{name}: {r['panels']} tab panels visible")
+        if width <= 390:
+            small = [f"{t['name']} {t['h']}px" for t in r["tabs"] if t["h"] < 44]
+            if small:
+                bad.append(f"{name}: tabs under 44px tall: " + ", ".join(small))
+            if not all(t["inside"] for t in r["tabs"]):
+                bad.append(f"{name}: a tab is outside the viewport")
+        if name == "Trades" and r["ph"] is not None:
+            if width <= 640 and (not r["ph"] or r["grid"]):
+                bad.append(f"Trades: phone table shown={r['ph']}, grid shown={r['grid']} (want phone table only)")
+            if width > 640 and (r["ph"] or not r["grid"]):
+                bad.append(f"Trades: phone table shown={r['ph']}, grid shown={r['grid']} (want grid only)")
+    page.locator('[role="tab"]', has_text="Trades").click()    # back to Trades: the grid must paint again after Price
+    page.wait_for_timeout(800)
+    notes.append("page height per tab: " + ", ".join(heights))
+    return bad, notes, layouts
+
+
 def free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -245,6 +298,8 @@ def main():
                         for width in WIDTHS:
                             for theme in THEMES:
                                 overflow_found |= shoot(browser, url, view, width, theme, out)
+                        if view == "Ticker":   # the tab bar must not scroll the page at the narrowest phone width
+                            overflow_found |= shoot(browser, url, view, 320, "light", out)
                 finally:
                     browser.close()
         except Exception as e:  # missing browser, launch failure, etc.
@@ -309,6 +364,7 @@ def shoot(browser, url, view, width, theme, out):
         page.screenshot(path=str(path), full_page=True)
         r = page.evaluate(JS)
         rank = ranking_findings(page, width) if view == "Overview" else []
+        tabs_bad, tabs_notes, tab_layouts = ticker_tab_findings(page, width) if view == "Ticker" else ([], [], [])
         if page.query_selector(SKELETON) or not page.evaluate(HAS_CONTENT):  # loading restarted or content vanished
             print(f"{view} {width} {theme}: ISSUES did not finish loading")
             return True
@@ -335,10 +391,25 @@ def shoot(browser, url, view, width, theme, out):
                      + "; ".join(r["small"][:5]))
     if rank:
         parts.append("ranking tables: " + "; ".join(rank))
+    if tabs_bad:
+        parts.append("ticker tabs: " + "; ".join(tabs_bad))
+    tab_scroll = False
+    for name, tl in tab_layouts:    # the same page-level measurements, per tab
+        if tl["pageScroll"]:
+            tab_scroll = True
+            parts.append(f"{name} tab: page-level horizontal scroll (widest: {tl['widest']})")
+        if tl["overflow"]:
+            parts.append(f"{name} tab overflowing viewport: " + "; ".join(tl["overflow"][:5]))
+        if tl["cut"]:
+            parts.append(f"{name} tab suspected cut-off text: " + "; ".join(tl["cut"][:5]))
+        extra = [x for x in tl["small"] if x not in r["small"] and not x.startswith("button#react-aria")]   # the page chrome is listed above
+        if width == 390 and extra:
+            parts.append(f"advisory, {name} tab {len(extra)} more targets under 44x44: " + "; ".join(extra[:5]))
+    parts.extend("advisory, " + n for n in tabs_notes)
     if r["sidebar"]:
         parts.append("advisory, sidebar or toggle still present")
     print(f"{view} {width} {theme}: {'ISSUES ' + ' | '.join(parts) if parts else 'PASS'}  {path}")
-    return bool(r["pageScroll"]) or bool(rank)
+    return bool(r["pageScroll"]) or bool(rank) or bool(tabs_bad) or tab_scroll
 
 
 if __name__ == "__main__":

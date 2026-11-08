@@ -83,6 +83,53 @@ def check_compact_table_rows(at, label):
         print(f"::error title=UI smoke: {label} compact table::expected st.table(s) of at most 25 rows, got {[len(t.value) for t in at.table]}")
 
 
+def check_ticker_tabs(at, label, expect_etf=None, expect_price=None):
+    """Ticker view: three tabs; AppTest renders every tab's content, so each tab's elements are looked up by tab."""
+    bad = []
+    tabs = {t.label: t for t in at.tabs}
+    if list(tabs) != ["Trades", "Price", "Brokers"]:
+        print(f"::error title=UI smoke: {label} tabs::tabs are {[t.label for t in at.tabs]}")
+        failures.append(f"{label} tabs")
+        return
+    tr, pr, br = tabs["Trades"], tabs["Price"], tabs["Brokers"]
+    want = "Min. volume" if at.radio(key="basis").value == "Filed minimum" else "Est. volume"
+    if [m.label for m in tr.metric] != ["Trades", want]:
+        bad.append(f"Trades metrics {[m.label for m in tr.metric]}")
+    if not any(str(c.value).startswith(f"{want} is") and "Exact: " in str(c.value) for c in tr.caption):
+        bad.append("Trades volume caption")
+    if not any("Trades were disclosed up to 45 days after they happened." in str(c.value) for c in tr.caption):
+        bad.append("45-day caption not in Trades")
+    pl = [m.label for m in pr.metric]
+    etf = [m.value for m in pr.metric if m.label == "Type"] == ["ETF / fund"]
+    if pl[:4] != ["Close (USD)", "Close (EUR)", "Exchange", "Type"]:
+        bad.append(f"Price metrics {pl}")
+    if etf != (pl[4:] == []) or (not etf and pl[4:] != ["P/E", "Fwd P/E", "PEG"]):
+        bad.append(f"Price ratios {pl[4:]} for etf={etf}")
+    if expect_etf is not None and etf != expect_etf:
+        bad.append(f"expected etf={expect_etf}")
+    no_price = any(str(c.value).startswith("No price found") for c in pr.caption)
+    if expect_price is not None and no_price == expect_price:
+        bad.append(f"expected a price={expect_price}, no-price caption shown={no_price}")
+    if not no_price and not any(str(c.value).startswith("Price is the end-of-day close on") for c in pr.caption):
+        bad.append("price caption")
+    if len(br.expander) != 9 or "Show the brokers as a table" not in [e.label for e in br.expander]:
+        bad.append(f"Brokers expanders {[e.label for e in br.expander]}")
+    if not any("On a narrow screen, scroll sideways inside the table to see the Link column." in str(c.value) for c in br.caption):
+        bad.append("scroll-hint caption")
+    advice = "This is information, not investment advice."
+    if sum(str(c.value) == advice for c in at.caption) <= sum(str(c.value) == advice for tab in (tr, pr, br) for c in tab.caption):
+        bad.append("advice caption missing outside the tabs")
+    if any("Trades below" in str(c.value) for c in at.caption):
+        bad.append("'Trades below' caption still present")
+    if "tab" in at.query_params:
+        bad.append("tab in the URL")
+    if bad:
+        failures.append(f"{label} ticker tabs")
+        print(f"::error title=UI smoke: {label} ticker tabs::{'; '.join(bad[:4])}")
+    else:
+        print("ok", label, "ticker tabs")
+
+
 def has_caption(at, text):
     return any(text in str(c.value) for c in at.caption)
 
@@ -235,10 +282,15 @@ def main():
         check_vol_label(at, f"{page} default")
         check_vol_caption(at, f"{page} default")
         check_compact_table(at, f"{page} default")
+        if page == "Ticker":
+            check_ticker_tabs(at, f"{page} default")
         at.radio(key="basis").set_value("Filed minimum").run()
         check_metrics(at, f"{page} Filed minimum")
         check_vol_label(at, f"{page} Filed minimum")
         check_vol_caption(at, f"{page} Filed minimum")
+        check_compact_table(at, f"{page} Filed minimum")      # Committee: the compact table's header reads "Min. volume"
+        if page == "Ticker":
+            check_ticker_tabs(at, f"{page} Filed minimum")
         at.radio(key="basis").set_value("Midpoint estimate").run()
         for item in sample:
             try:
@@ -253,8 +305,28 @@ def main():
             at.radio(key="currency").set_value("EUR").run()
             check(at, f"{page} in EUR")
 
-    # members and committees with no sector mapping show the visible n/a note; mapped ones do not
+    # Ticker tabs for an ETF, a ticker with no price, and a plain stock, in USD and EUR; the data has no ticker without trades
     import db
+    tcon = db.connect()
+    prof = {t: db.ticker_profile(tcon, t) for t in tickers}
+    picks = {"ETF": next((t for t in tickers if prof[t]["kind"] == "etf"), None),
+             "no-price": next((t for t in tickers if not prof[t]["as_of"]), None),
+             "stock": next((t for t in tickers if prof[t]["kind"] == "equity" and prof[t]["as_of"]), None)}
+    for kind, pick in picks.items():
+        if pick is None:
+            print(f"note: no {kind} ticker in this data; its tabs were not checked")
+            continue
+        for currency in ("USD", "EUR"):
+            at = fresh()
+            at.radio(key="page").set_value("Ticker").run()
+            at.selectbox(key="ticker_sel").set_value(pick).run()
+            if currency != "USD":
+                at.radio(key="currency").set_value(currency).run()
+            check(at, f"Ticker tabs {kind} {pick} {currency}")
+            check_ticker_tabs(at, f"{kind} {pick} {currency}", expect_etf=(kind == "ETF"), expect_price=(kind != "no-price"))
+    print("note: the data has no ticker with zero trades (tickers come from trades); that case was not checked")
+
+    # members and committees with no sector mapping show the visible n/a note; mapped ones do not
     notes = {"Member": "Committee-relevant is n/a: none of this member's committees map to sectors, "
                        "so the sector heuristic does not apply.",
              "Committee": "Committee-relevant is n/a: this committee does not map to sectors, "

@@ -276,6 +276,21 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
   label[data-testid="stRadioOption"]:focus-within { outline-color: #8fabd4; }
   [data-testid="stMarkdownContainer"] a { color: #8fabd4; }
 }
+/* tabs (Ticker view): 44px tall, selected = bold plus underline, readable unselected text, visible keyboard focus; matched by role, not Streamlit's hashed classes */
+[role="tablist"] { overflow-x: auto; }
+[role="tab"] { min-height: 44px; padding: .5rem .9rem; color: rgba(0,0,0,.78); }
+[role="tab"], [role="tab"] * { font-size: 1rem; }
+[role="tab"][aria-selected="true"] { color: #000; font-weight: 700; box-shadow: inset 0 -3px 0 #4a70a9; }
+[role="tab"][aria-selected="true"] * { font-weight: 700; color: inherit; }
+[role="tab"]:focus-visible { outline: 2px solid #4a70a9; outline-offset: 2px; }
+[role="tab"] .react-aria-SelectionIndicator { display: none; }
+@media (prefers-color-scheme: dark) {
+  [role="tab"] { color: rgba(239,236,227,.82); }
+  [role="tab"][aria-selected="true"] { color: #efece3; box-shadow: inset 0 -3px 0 #8fabd4; }
+  [role="tab"]:focus-visible { outline-color: #8fabd4; }
+}
+/* broker table links (Ticker, Brokers tab): at least 44x44 to tap */
+.broker-table td a { display: inline-block; min-height: 44px; min-width: 44px; padding: .6rem .25rem; box-sizing: border-box; }
 /* metric values wrap at spaces instead of being cut off with an ellipsis ("NYSE American", "ETF / fund") */
 [data-testid="stMetric"] [data-testid="stMetricValue"] * { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; }
 /* just above the phone breakpoint the four-up columns are about 140px: a slightly smaller value keeps "$5,919.82" whole */
@@ -553,54 +568,60 @@ else:
     prof = db.ticker_profile(con, t)
     df = db.ticker_summary(con, t)
     st.subheader(f"{t}" + (f" - {prof['name']}" if prof["name"] else ""))
-    a, b, c, d = st.columns(4)
-    if prof["price"] is not None:
-        a.metric("Close (USD)", f"${prof['price']:,.2f}",
-                 delta=f"{100 * (prof['price'] / prof['prev_close'] - 1):+.1f}% on the day" if prof["prev_close"] else None)
-        b.metric("Close (EUR)", f"€{prof['price'] / RATE:,.2f}" if RATE else "n/a",
-                 help="USD close converted at the latest ECB rate." if RATE else "No EUR rate stored yet.")
-    else:
-        a.metric("Close (USD)", "n/a")
-        b.metric("Close (EUR)", "n/a")
-    c.metric("Exchange", prof["exchange"] or "unknown")
-    d.metric("Type", {"equity": "Stock", "etf": "ETF / fund"}.get(prof["kind"], "unknown"))
-    if not prof["as_of"]:
-        st.caption("No price found for this ticker (delisted, renamed, not a plain stock, or not fetched yet).")
-    else:
-        st.caption(f"Price is the end-of-day close on {prof['as_of']}, refreshed nightly; it is not a live quote. "
-                   "Trades below were disclosed up to 45 days after they happened.")
-    if prof["kind"] != "etf":
-        a, b, c = st.columns(3)
-        na = "n/a"
-        a.metric("P/E", f"{prof['pe']:.1f}" if prof["pe"] else na)
-        b.metric("Fwd P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na)
-        c.metric("PEG", f"{prof['peg']:.2f}" if prof["peg"] else na)
-        st.caption("Ratios come from Yahoo Finance, refreshed nightly, and are shown for reference: a low or high number is not "
-                   "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies).")
-        st.caption("P/E is price over the last 12 months of earnings, Fwd P/E uses expected earnings for the next 12 months, "
-                   "and PEG is P/E divided by expected earnings growth. n/a means no positive earnings, no growth figure or no data.")
-    a, b = st.columns(2)
-    a.metric("Trades", len(df))
-    vol = db.volume_of(df)
-    b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
-    vol_caption(vol)
-    show(df, download=f"ticker_{t}_trades", phone_cols=["member", "tx_date", "tx_type", "amount_est"], name="ticker_trades")
+    st.caption("This is information, not investment advice.")
+    tab_trades, tab_price, tab_brokers = st.tabs(["Trades", "Price", "Brokers"])
+    with tab_trades:
+        a, b = st.columns(2)
+        a.metric("Trades", len(df))
+        vol = db.volume_of(df)
+        b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
+        vol_caption(vol)
+        st.caption("Trades were disclosed up to 45 days after they happened.")
+        show(df, download=f"ticker_{t}_trades", phone_cols=["member", "tx_date", "tx_type", "amount_est"], name="ticker_trades")
 
-    st.subheader("Where can I buy it from the Netherlands?")
-    verdict, per = brokers.availability(prof["kind"], prof["exchange_code"])
-    st.write(verdict)
-    if prof["kind"] == "etf":
-        st.info(brokers.ETF_NOTE)
-    for x in brokers.BROKERS:
-        with st.expander(f"{x['name']}: {per[x['name']]}"):
-            st.write(x["note"])
-            st.link_button(f"Open {x['name']}", x["url"])
-    with st.expander("Show the brokers as a table"):
-        trs = "".join(f"<tr><td>{html.escape(x['name'])}</td><td>{html.escape(per[x['name']])}</td><td>{html.escape(x['note'])}</td>"
-                      f"<td><a href=\"{html.escape(x['url'])}\">Open {html.escape(x['name'])}</a></td></tr>" for x in brokers.BROKERS)
-        st.markdown('<div style="overflow-x: auto"><table><thead><tr><th>Broker</th><th>Can I buy it?</th><th>Notes</th><th>Link</th>'
-                    f"</tr></thead><tbody>{trs}</tbody></table></div>", unsafe_allow_html=True)   # real HTML table: screen-reader friendly
-    st.caption(f"Compiled by hand, last reviewed {brokers.REVIEWED}: broker offerings and fees change, so confirm on the "
-               "broker's site. Pick a broker supervised in the EU (check the AFM register). Dutch residents should also file a "
-               "W-8BEN with their broker so US dividends are withheld at 15% instead of 30%. This is information, not "
-               "investment advice; because of the filing delay, a politician's trade is old news by the time it is public.")
+    with tab_price:
+        a, b, c, d = st.columns(4)
+        if prof["price"] is not None:
+            a.metric("Close (USD)", f"${prof['price']:,.2f}",
+                     delta=f"{100 * (prof['price'] / prof['prev_close'] - 1):+.1f}% on the day" if prof["prev_close"] else None)
+            b.metric("Close (EUR)", f"€{prof['price'] / RATE:,.2f}" if RATE else "n/a",
+                     help="USD close converted at the latest ECB rate." if RATE else "No EUR rate stored yet.")
+        else:
+            a.metric("Close (USD)", "n/a")
+            b.metric("Close (EUR)", "n/a")
+        c.metric("Exchange", prof["exchange"] or "unknown")
+        d.metric("Type", {"equity": "Stock", "etf": "ETF / fund"}.get(prof["kind"], "unknown"))
+        if not prof["as_of"]:
+            st.caption("No price found for this ticker (delisted, renamed, not a plain stock, or not fetched yet).")
+        else:
+            st.caption(f"Price is the end-of-day close on {prof['as_of']}, refreshed nightly; it is not a live quote.")
+        if prof["kind"] != "etf":
+            a, b, c = st.columns(3)
+            na = "n/a"
+            a.metric("P/E", f"{prof['pe']:.1f}" if prof["pe"] else na)
+            b.metric("Fwd P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na)
+            c.metric("PEG", f"{prof['peg']:.2f}" if prof["peg"] else na)
+            st.caption("Ratios come from Yahoo Finance, refreshed nightly, and are shown for reference: a low or high number is not "
+                       "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies).")
+            st.caption("P/E is price over the last 12 months of earnings, Fwd P/E uses expected earnings for the next 12 months, "
+                       "and PEG is P/E divided by expected earnings growth. n/a means no positive earnings, no growth figure or no data.")
+    with tab_brokers:
+        st.subheader("Where can I buy it from the Netherlands?")
+        verdict, per = brokers.availability(prof["kind"], prof["exchange_code"])
+        st.write(verdict)
+        if prof["kind"] == "etf":
+            st.info(brokers.ETF_NOTE)
+        for x in brokers.BROKERS:
+            with st.expander(f"{x['name']}: {per[x['name']]}"):
+                st.write(x["note"])
+                st.link_button(f"Open {x['name']}", x["url"])
+        with st.expander("Show the brokers as a table"):
+            st.caption("On a narrow screen, scroll sideways inside the table to see the Link column.")
+            trs = "".join(f"<tr><td>{html.escape(x['name'])}</td><td>{html.escape(per[x['name']])}</td><td>{html.escape(x['note'])}</td>"
+                          f"<td><a href=\"{html.escape(x['url'])}\">Open {html.escape(x['name'])}</a></td></tr>" for x in brokers.BROKERS)
+            st.markdown('<div class="broker-table" style="overflow-x: auto"><table><thead><tr><th>Broker</th><th>Can I buy it?</th><th>Notes</th><th>Link</th>'
+                        f"</tr></thead><tbody>{trs}</tbody></table></div>", unsafe_allow_html=True)   # real HTML table: screen-reader friendly
+        st.caption(f"Compiled by hand, last reviewed {brokers.REVIEWED}: broker offerings and fees change, so confirm on the "
+                   "broker's site. Pick a broker supervised in the EU (check the AFM register). Dutch residents should also file a "
+                   "W-8BEN with their broker so US dividends are withheld at 15% instead of 30%. This is information, not "
+                   "investment advice; because of the filing delay, a politician's trade is old news by the time it is public.")
