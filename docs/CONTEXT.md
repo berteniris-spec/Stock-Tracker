@@ -6,9 +6,9 @@ Read this first after a session clear. Keep it short and true; the Documenter re
 Congress trades: a personal Streamlit dashboard that joins US congressional stock trades to committee membership and estimated volume. SQLite database, runs locally or on Streamlit Community Cloud from the `main` branch. Public repo, no secrets. Keep use non-commercial.
 
 ## Current state
-- `main` has the mobile pass steps 1 to 5 (merged in PRs #6 to #11) and is what the deployed app runs.
-- Branch `claude/add-logo` (from `main` at `eae516a`) has the StockTrader logo above the title, uncommitted: `assets/stocktrader-logo.png`, `app.py`, `tests/ui_smoke.py`, `scripts/ui_check.py`. Designer and Tester passed it in Chromium (see the top of `CHANGELOG.md`). It is not on the deployed app.
-- Unit tests and `tests/ui_smoke.py` were run by the Tester on this branch; nothing has been committed or pushed.
+- `main` has the mobile pass steps 1 to 5 (merged in PRs #6 to #11), the venv instructions (PR #10), the ignored wizard folder (PR #12) and the StockTrader logo above the title (PR #13), and is what the deployed app runs.
+- The logo (`assets/stocktrader-logo.png`, `app.py`, `tests/ui_smoke.py`, `scripts/ui_check.py`) was passed by Designer and Tester in Chromium (see the top of `CHANGELOG.md`) before it was merged.
+- No work is in progress and no PRs are open. The working tree is clean apart from untracked files (`.idea/` and the two logo originals in the repo root).
 
 ## How it fits together
 - `assets/stocktrader-logo.png`: the logo, 169 x 144 px PNG, shown above the title with `st.image` (guarded by `LOGO.exists()`).
@@ -60,13 +60,12 @@ Permissions in `.claude/settings.json` (applies to everyone using Claude Code he
 - Risk: the tab CSS (step 5) matches Streamlit 1.66.1's React-Aria tab DOM (`[role="tab"]`, `[role="tablist"]`, `aria-selected`, `data-testid="stTab"`, hidden `react-aria-SelectionIndicator`). An upgrade could stop it matching and tabs would fall back to Streamlit's default small tabs; `ui_check.py`'s tab checks flag it. Tab colours: unselected text at caption colours (about 10.5:1 / 10.9:1), selected solid ink bold (17.8:1 / 15.9:1) with a 3px underline `#4a70a9` light / `#8fabd4` dark (4.25:1 on cream, indicator only).
 - Volume is a midpoint estimate of filed ranges; committee membership is a current snapshot, not as of the trade date.
 
-- Logo decisions (branch `claude/add-logo`): PNG, not SVG, because the SVG is an incomplete trace. Full colour on both themes, no dark-mode inversion, because the white dome and green keep the mark above 3:1 on dark. Above the h1 rather than replacing it, so the page title stays "Congress trades" for the tests. Not a link, no favicon (the artwork is not square). Width fixed at 169px with `width: auto !important`, because Streamlit's image width stretched it. The hover Fullscreen button is hidden with `stElementToolbar`.
+- Logo decisions (merged in PR #13): PNG, not SVG, because the SVG is an incomplete trace. Full colour on both themes, no dark-mode inversion, because the white dome and green keep the mark above 3:1 on dark. Above the h1 rather than replacing it, so the page title stays "Congress trades" for the tests. Not a link, no favicon (the artwork is not square). Width fixed at 169px with `width: auto !important`, because Streamlit's image width stretched it. The hover Fullscreen button is hidden with `stElementToolbar`.
 - Risk: the logo CSS depends on Streamlit 1.66.1's `st.image` markup and the `st-key-brand` container class. Re-run `/ui-check` after an upgrade.
 - `ui_check.py` reports and fixes nothing; it exits 1 for page-level overflow, a logo problem (including a missing PNG) or a failed load, so small tap targets never fail it. Playwright stays out of `requirements.txt` so CI and the cloud install are unchanged.
 - Permissions: routine read-only and test commands need no prompt; anything that records or publishes (`git add/commit/push`) asks; destructive or network shell tools are denied.
 
 ## Open work
-- Logo (branch `claude/add-logo`, uncommitted): the owner decides when to commit. Not on the deployed app until it is merged to `main`, which only the owner asks for.
 - Owner, design system: the SVG in the Logo group is an incomplete trace (the PNG is the usable mark); `api/assets/Logo.md` still lists only the SVG until the page regenerates it; an optional dark-theme logo variant; the Tabs pattern is still missing.
 - Owner: the untracked root files `StockTrader-Logo.svg` and `StockTrader Logo.png` are the originals. Remove them or keep them.
 - Favicon: needs a square mark from the owner.
@@ -95,7 +94,7 @@ Permissions in `.claude/settings.json` (applies to everyone using Claude Code he
 ## Known limits
 Filings lag trades by up to 45 days. Sector is unknown for trades with no ticker. Unmapped tickers are never flagged committee-relevant. EUR uses one latest rate for all dates.
 
-Logo (branch `claude/add-logo`, uncommitted): checked in Chromium only, not on the deployed app. Not checked: EUR and the Filed minimum basis with the logo in a browser; members with no committees, paper-only filings or empty data in a browser; Safari and Firefox; high-DPI sharpness; screen readers; the dark theme by eye; the hover Fullscreen button; CI. The logo's alt text is "StockTrader logo"; how a screen reader announces it is untested. A missing PNG shows no logo and makes `ui_check.py` exit 1.
+Logo (merged in PR #13): checked in Chromium only, not on the deployed app. Not checked: EUR and the Filed minimum basis with the logo in a browser; members with no committees, paper-only filings or empty data in a browser; Safari and Firefox; high-DPI sharpness; screen readers; the dark theme by eye; the hover Fullscreen button; CI. The logo's alt text is "StockTrader logo"; how a screen reader announces it is untested. A missing PNG shows no logo and makes `ui_check.py` exit 1.
 
 Mobile step 5 was checked in Chromium only (desktop; USD and EUR; light and dark; 320, 390, 640, 641, 1280; NVDA, BTC, AMI, unknown id ZZZZ): not the deployed app, console warnings, an ETF-kind ticker (none in the data), EUR beyond the Ticker tabs, the Filed minimum basis on Overview, Safari or Firefox, real touch, screen readers, the real Tab order; a zero-trade ticker (none exists); the reportlab part of `test_house_importer` (reportlab not in the venv).
 
@@ -104,4 +103,4 @@ Mobile step 5 was checked in Chromium only (desktop; USD and EUR; light and dark
 Hooks: not yet seen firing in a live session; `${CLAUDE_PROJECT_DIR}` expansion, a fresh container install and the 120s test timeout are unchecked. The Bash guard has false positives (`cp congress.db /tmp/x`, `>` in SQL) and a false negative (Python writing the file). The stop hook runs the full unit tests (15s or more) whenever any `.py` file is uncommitted, and its CHANGELOG warning fires on any uncommitted code change.
 
 ## Next step
-The owner decides whether to commit `claude/add-logo`. If they ask, run `/ship` on that branch (tests, docs check, commit, push; no PR or merge). Then the owner items above: favicon mark, the design-system SVG trace, and the `Logo.md` regeneration.
+Mobile pass step 6, chart polish (quarterly labels), then step 7, readability. Owner items alongside: keep or remove the root logo originals, the favicon mark, the design-system SVG trace, and the `Logo.md` regeneration.
