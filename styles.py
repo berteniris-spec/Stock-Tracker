@@ -35,6 +35,8 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 }
 /* broker table links (Ticker, Brokers tab): at least 44x44 to tap */
 .broker-table td a { display: inline-block; min-height: 44px; min-width: 44px; padding: .6rem .25rem; box-sizing: border-box; }
+/* paper filing links ("Open filing N (PDF)"): at least 44px high to tap */
+.st-key-paper_filings td a { display: inline-block; min-height: 44px; line-height: 44px; }
 /* metric values wrap at spaces instead of being cut off with an ellipsis ("NYSE American", "ETF / fund") */
 [data-testid="stMetric"] [data-testid="stMetricValue"] * { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; }
 /* just above the phone breakpoint the four-up columns are about 140px: a slightly smaller value keeps "$5,919.82" whole */
@@ -75,7 +77,8 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 [class*="st-key-open_ov_"] [data-testid="stMarkdownContainer"] { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 640px) and (prefers-color-scheme: dark) { [class*="st-key-ph_"] td { border-color: rgba(239,236,227,.2) !important; } }
 /* 320px: five columns need tighter cell padding to fit without breaking words */
-@media (max-width: 359px) { [class*="st-key-ph_"] th, [class*="st-key-ph_"] td { padding-left: .1rem !important; padding-right: .1rem !important; } }
+@media (max-width: 359px) { [class*="st-key-ph_"] th, [class*="st-key-ph_"] td { padding-left: .1rem !important; padding-right: .1rem !important; }
+  [class*="st-key-ph_"] table { font-size: .78rem; } }
 /* 320px safety net: a table that is still too wide scrolls inside its own box (visible overflow stays at 360-640 so it shows up as a failure) */
 @media (max-width: 359px) { [class*="st-key-ph_"] [data-testid="stTable"] > div { overflow-x: auto; } }
 /* list rows: the boundary is ink at 55% (the rule colour was about 1.5:1) */

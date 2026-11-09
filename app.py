@@ -340,9 +340,10 @@ with st.expander("About this data"):
         + (f"- **Sector** is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%), from the FinanceDatabase "
            "classification; sectors are approximate and the committee-relevance flag only applies where a sector is known.\n" if total else ""))
     if not paper.empty:
-        st.markdown("Some members may have traded more than shown. Filings not imported:")
-        rows = "\n".join(f"| {r.member} | {r.year} | [Open filing {r.doc_id} (PDF)]({r.url}) |" for r in paper.itertuples())
-        st.markdown("| Member | Year | Filing |\n|---|---|---|\n" + rows)
+        with st.container(key="paper_filings"):
+            st.markdown("Some members may have traded more than shown. Filings not imported:")
+            rows = "\n".join(f"| {r.member} | {r.year} | [Open filing {r.doc_id} (PDF)]({r.url}) |" for r in paper.itertuples())
+            st.markdown("| Member | Year | Filing |\n|---|---|---|\n" + rows)
 
 if page == "Overview":
     sync_url("Overview")

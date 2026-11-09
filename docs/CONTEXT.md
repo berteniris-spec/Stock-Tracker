@@ -6,7 +6,7 @@ Read this first after a session clear. Keep it under about 50 lines; history bel
 Congress trades: a personal Streamlit dashboard joining US congressional stock trades to committee membership and estimated volume. SQLite, runs locally or on Streamlit Community Cloud from `main`. Public repo, no secrets, non-commercial.
 
 ## Current state
-- `main` has the mobile pass steps 1 to 6, the logo (PR #13) and the venv instructions. No PRs are open.
+- `main` has the mobile pass steps 1 to 7, the logo (PR #13) and the venv instructions. No PRs are open.
 - The workflow changes (PR #14, merged) are: `scripts/test.sh`, wider permissions, a size-the-loop table in `AGENTS.md`, shorter agent briefs, this shorter file, and `styles.py` (CSS moved out of `app.py`).
 
 ## How it fits together
@@ -35,8 +35,8 @@ Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash comma
 - Risk: `styles.py` targets Streamlit 1.66.x DOM (`stRadioOption`, `stMetricValue`, `stLayoutWrapper`, `stTable`, `[role="tab"]`, `st-key-*`, `st.image`). After any Streamlit upgrade run `/ui-check`. `requirements.txt` pins `streamlit>=1.66.1,<1.67`; bump it deliberately.
 
 ## Open work
-- Mobile pass: step 7 readability. Step 4b: three Committee trades tables (HSSY, HLIG, HSGO) scroll 5 to 9px inside their box at 320px.
-- Step 5 review items: the "Open filing N (PDF)" link (`app.py` ~line 429) is 171x21px; owner decides whether to rename the Price tab to "Price and ratios".
+- Mobile pass: steps 1 to 7 done; no step 8 is defined.
+- Owner decides whether to rename the Price tab to "Price and ratios".
 - Small: focus ring after mouse clicks (`:focus-within` vs `:focus-visible`); dataframe `help=` for P/E and PEG in `LABELS`; delta-down red on pink is about 3.9:1; Brokers tab is long at 320px.
 - Owner: a square mark for a favicon; design system updates (SVG trace, `Logo.md`, Tabs pattern, README metric strips and Tables rule).
 - Ideas: Claude PR review Action; scheduled data-health checks; Playwright MCP server.
@@ -47,4 +47,4 @@ Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash comma
 Filings lag trades by up to 45 days. Sector is unknown for trades with no ticker. Unmapped tickers are never flagged committee-relevant. EUR uses one latest rate for all dates. UI work was checked in Chromium only (see `CHANGELOG.md` for what each step covered and skipped): not Safari, Firefox, real touch, screen readers or the deployed app. `ui_check.py` captures only the default state (USD, default basis, Settings closed).
 
 ## Next step
-Mobile pass step 7 (readability).
+Owner to pick: the small items under Open work, or the data ideas.

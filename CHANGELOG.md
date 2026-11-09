@@ -3,6 +3,12 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Mobile pass, step 7 (readability)
+- The "Open filing N (PDF)" links in the paper filings table are now 44px high (were 21px). They sit in a keyed container (`paper_filings`).
+- At 320px the compact tables use a smaller font (.78rem), so the three Committee trades tables (HSSY, HLIG, HSGO) no longer scroll inside their box (step 4b).
+- Verified: `scripts/test.sh --smoke` 0 failures; Chromium at 320 (four committees, scrollWidth equals clientWidth) and 1280 (link 171x44).
+- Not done: the delta-down red on pink (about 3.9:1) was not reproduced (the ticker checked had an up delta), and P/E and PEG `help=` in `LABELS`. Light theme only; not checked in dark, Safari, Firefox or the deployed app.
+
 ## Mobile pass, step 6 (chart polish)
 - Monthly volume chart: the x axis now labels only the first month of each quarter ("Q1 2026") instead of a thinned list of months; the axis title is "Quarter (first month shown)", tooltips still show the month. The legend moved below the chart so the plot keeps the full width at 320px; the title wraps onto two lines instead of being cut off; chart height 320 to 380 so the plot stays tall with the legend below.
 - Verified: `scripts/test.sh --smoke` (0 failures); `ui_check.py` (advisories only, all carried over); Chromium screenshots of the chart at 320 and 1280, light theme.
