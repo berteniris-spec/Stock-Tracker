@@ -50,7 +50,7 @@ def test_fetch_store_and_medians():
                             "numberOfAnalystOpinions": 40, "trailingAnnualDividendYield": 0.005, "freeCashflow": -5}
     v = dict(zip(db.FUNDAMENTAL_KEYS, prices.yahoo_fundamentals("AAPL")))
     assert v["profit_margin"] == 0.25 and v["debt_to_equity"] == 1.5 and v["free_cash_flow"] == -5 and v["analyst_count"] == 40
-    assert v["roe"] is None and v["beta"] == 1.2
+    assert v["roe"] is None and v["beta"] == 1.2 and v["market_cap"] == 3e12
     prices._INFO.clear()
 
 

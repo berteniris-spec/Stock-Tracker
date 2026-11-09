@@ -130,6 +130,12 @@ def _signed(v):
     return v if v == v and abs(v) < 1e15 else None
 
 
+def _positive(v):
+    """A finite positive number of any size (market cap runs into the trillions), else None."""
+    v = _signed(v)
+    return v if v is not None and v > 0 else None
+
+
 def yahoo_fundamentals(symbol):
     """Tuple in db.FUNDAMENTAL_KEYS order for one symbol; raises on a failed request."""
     i = yahoo_info(symbol)
@@ -139,7 +145,7 @@ def yahoo_fundamentals(symbol):
             _signed(i.get("earningsGrowth")), de / 100 if de is not None else None,        # Yahoo gives percent
             _num(i.get("currentRatio")), _signed(i.get("freeCashflow")),
             _num(i.get("priceToSalesTrailing12Months")), _num(i.get("priceToBook")),
-            _signed(i.get("trailingAnnualDividendYield")), _signed(i.get("beta")), _num(i.get("marketCap")),
+            _signed(i.get("trailingAnnualDividendYield")), _signed(i.get("beta")), _positive(i.get("marketCap")),
             _num(i.get("fiftyTwoWeekLow")), _num(i.get("fiftyTwoWeekHigh")),
             _num(i.get("recommendationMean")), int(n) if n else None, _num(i.get("targetMeanPrice")))
 
