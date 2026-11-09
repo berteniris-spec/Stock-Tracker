@@ -3,6 +3,13 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Table links
+- Member, Committee and Ticker tables now link onward. Select a row (the checkbox at its start) to open its member, committee or ticker; where a row has two (committee trades: member and ticker) one button each appears under the table. Links: Member page trades -> ticker, committees -> committee; Committee page members -> member, trades -> member and ticker; Ticker page trades -> member. A row with nothing to open (a blank ticker, a subcommittee) says so.
+- Every one of those tables also has an "Open a ... from this table" expander with a picker, which works on a phone (the compact tables cannot be selected) and with a keyboard.
+- `db.committee_trades` and `db.ticker_summary` now return `bioguide_id`; it drives the links and is hidden from the table and the CSV.
+- Verified: `scripts/test.sh --smoke` 0 failures (new `check_table_links` for the five pickers); Chromium row clicks at 1280 on Member trades (blank ticker: message), Committee members, Committee trades (two buttons) and Ticker trades; `ui_check.py` clean.
+- Not checked: row clicks on a phone (the grid is only shown after "Show all columns"), dark theme, the deployed app.
+
 ## Redesign (compact header, cards, search, new charts)
 - Top bar: small logo and title (1.4rem) on one row with a Settings popover (volume basis, currency, refresh) replacing the Settings expander; the Deploy button is hidden by CSS. The view switch is a row of pills (still the `page` radio). "About this data" moved to the bottom of the page; the coverage gap is an orange badge.
 - Theme: light theme changed in `.streamlit/config.toml` (owner approved): primary `#1f3a5f`, background `#f4f2ec`, secondary `#e7e3d8` (table headers and selects are no longer blue). Metrics, expanders and ranking rows are white-tinted cards with a 1px border and 12px radius; dark theme colours unchanged.

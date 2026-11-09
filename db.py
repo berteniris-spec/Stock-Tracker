@@ -296,7 +296,7 @@ def committee_members(con, committee_id):
 
 def committee_trades(con, committee_id):
     df = _df(con, """
-        SELECT m.name AS member, t.tx_date, t.ticker, t.asset, t.tx_type,
+        SELECT m.name AS member, m.bioguide_id, t.tx_date, t.ticker, t.asset, t.tx_type,
                t.amount_label, t.amount_min, t.amount_max, t.amount_est, ts.sector,
                ti.exchange, tp.price, tv.pe, tv.forward_pe, tv.peg
         FROM memberships ms JOIN members m USING (bioguide_id)
@@ -323,7 +323,7 @@ def committees_with_trading(con):
 
 def ticker_summary(con, ticker):
     return _df(con, """
-        SELECT m.name AS member, m.chamber, t.tx_date, t.tx_type, t.amount_label, t.amount_min, t.amount_max, t.amount_est
+        SELECT m.name AS member, m.bioguide_id, m.chamber, t.tx_date, t.tx_type, t.amount_label, t.amount_min, t.amount_max, t.amount_est
         FROM trades t JOIN members m USING (bioguide_id)
         WHERE t.ticker = ? ORDER BY t.tx_date DESC""", (ticker,))
 

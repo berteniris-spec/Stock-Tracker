@@ -227,6 +227,32 @@ def check_search():
             print("ok", f"search opens {view}: {opt}")
 
 
+def check_table_links(members, committees, tickers):
+    """Each table's "Open a ... from this table" picker opens that member, committee or ticker."""
+    cases = [("Member", "member_sel", members[0], "ticker", "Ticker", "ticker_sel"),
+             ("Member", "member_sel", members[0], "committee", "Committee", "committee_sel"),
+             ("Committee", "committee_sel", committees[0], "member", "Member", "member_sel"),
+             ("Committee", "committee_sel", committees[0], "ticker", "Ticker", "ticker_sel"),
+             ("Ticker", "ticker_sel", tickers[0], "member", "Member", "member_sel")]
+    for page, sel, ident, noun, view, tsel in cases:
+        at = fresh()
+        at.session_state["page"] = page
+        at.session_state[sel] = ident
+        at.run()
+        boxes = [s for s in at.selectbox if (s.key or "").startswith("goto_") and s.key.endswith("_" + noun)]
+        if not boxes:
+            print(f"note: no {noun} picker on {page} {ident} (no linkable rows)")
+            continue
+        box = boxes[0]
+        box.select(box.options[0]).run()
+        ok = not at.exception and at.radio(key="page").value == view and at.selectbox(key=tsel).value is not None
+        if not ok:
+            failures.append(f"table link {page}->{noun}")
+            print(f"::error title=UI smoke: table link {page}->{noun}::page={at.radio(key='page').value} exception={[e.value for e in at.exception][:1]}")
+        else:
+            print("ok", f"{page} table opens {view} via the {noun} picker")
+
+
 def main():
     con = sqlite3.connect(ROOT / "congress.db")
     random.seed(1)
@@ -239,6 +265,7 @@ def main():
         "JOIN trades t ON t.bioguide_id=m.bioguide_id WHERE c.parent_id IS NULL")]
 
     check_search()
+    check_table_links(members, committees, tickers)
     at = fresh()
     check(at, "Overview")
     if [t.value for t in at.title] != ["Congress trades"]:

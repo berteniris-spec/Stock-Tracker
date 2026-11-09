@@ -139,7 +139,69 @@ def phone_table(df, cols, fmt):
                    "Tick Show all columns above for every column and row.")
 
 
-def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name=None, desktop_only=False):
+VALID_IDS = None
+
+
+def valid_ids():
+    """{view: set of ids} the view's selectbox can show, so a link never lands on a missing option."""
+    global VALID_IDS
+    if VALID_IDS is None:
+        VALID_IDS = {}
+        for view, ident in search_options().values():
+            VALID_IDS.setdefault(view, set()).add(ident)
+    return VALID_IDS
+
+
+def _targets(links, i):
+    """(link, id, text) for each link of row i whose id exists in the target view."""
+    return [(l, l["ids"][i], l["texts"][i]) for l in links
+            if _has(l["ids"][i]) and l["ids"][i] in valid_ids().get(l["view"], set())]
+
+
+def link_row(event, links):
+    """After a row is selected in a table: open its only link, or offer one button per link (member and ticker)."""
+    rows = event.selection.rows if event is not None else []
+    if not rows:
+        return
+    targets = _targets(links, rows[0])
+    if not targets:
+        st.caption("This row has no page of its own (for example a subcommittee).")
+    if len(targets) == 1:
+        l, ident, _ = targets[0]
+        st.session_state["_goto"] = (l["view"], l["key"], ident)
+        st.rerun()
+    for l, ident, text in targets:
+        st.button(f"Open {l['noun']}: {text}", key=f"go_{l['name']}_{l['noun']}", icon=":material/arrow_forward:",
+                  on_click=_open, args=(l["view"], l["key"], ident))
+
+
+def _go_select(skey, view, key, options):
+    ident = options.get(st.session_state.get(skey))
+    if ident is not None:
+        st.session_state["_goto"] = (view, key, ident)
+    st.session_state[skey] = None
+
+
+def open_from_table(links):
+    """Keyboard- and phone-friendly alternative to clicking a row: pick any member, committee or ticker in this table."""
+    boxes = []
+    for l in links:
+        seen = {}
+        for ident, text in zip(l["ids"], l["texts"]):
+            if _has(ident) and ident in valid_ids().get(l["view"], set()) and str(text) not in seen:
+                seen[str(text)] = ident
+        if seen:
+            boxes.append((l, seen))
+    if not boxes:
+        return
+    with st.expander("Open a " + " or ".join(l["noun"] for l, _ in boxes) + " from this table"):
+        for l, seen in boxes:
+            skey = f"goto_{l['name']}_{l['noun']}"
+            st.selectbox(f"Open {l['noun']}", list(seen)[:300], index=None, key=skey, placeholder=f"Choose a {l['noun']}",
+                         on_change=_go_select, args=(skey, l["view"], l["key"], seen))
+
+
+def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name=None, desktop_only=False, links=None):
     """Table with $ and thousands separators; the underlying numbers stay numeric so sorting works.
 
     With key/ids/goto the rows are clickable: selecting a row jumps to view `goto` with that row's id
@@ -150,6 +212,10 @@ def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name
     are in the page at every width, so resizing needs no rerun). With `name` and `desktop_only` the table is hidden at phone width and the
     caller draws the phone rendering. An empty table is never swapped.
     """
+    links = [dict(l, name=name, texts=list(df[l["col"]]), ids=list(df[l["idcol"]] if l.get("idcol") else df[l["col"]]))
+             for l in (links or []) if l["col"] in df.columns]            # per row, aligned with df
+    hide = {l["idcol"] for l in links if l.get("idcol")}
+    df = df.drop(columns=[c for c in hide if c in df.columns])          # id columns drive the links; they are not shown or exported
     raw = df.copy()
     df = df.copy()
     if "title" in df:
@@ -167,6 +233,9 @@ def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name
     fmt.update({c: "{:,.1f}" for c in ("pe", "forward_pe") if c in df.columns})
     fmt.update({c: "{:,.2f}" for c in ("peg",) if c in df.columns})
     kwargs = dict(on_select="rerun", selection_mode="single-row", key=key) if key else {}
+    if links and name and not key:
+        key = f"sel_{name}"
+        kwargs = dict(on_select="rerun", selection_mode="single-row", key=key)
     styled = df.style.format(fmt, na_rep="") if fmt else df
 
     def grid(**kw):
@@ -191,6 +260,9 @@ def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name
         if rows:
             st.session_state["_goto"] = (goto[0], goto[1], list(ids)[rows[0]])
             st.rerun()
+    if links:
+        link_row(event, links)
+        open_from_table(links)
 
 
 def esc(s):
@@ -500,11 +572,13 @@ elif page == "Member":
     if mc.empty:
         st.info("No current committee assignments in the data for this member.")
     else:
-        show(mc[["name", "title", "as_of"]])
+        show(mc[["id", "name", "title", "as_of"]], name="member_committees",
+             links=[dict(col="name", idcol="id", view="Committee", key="committee_sel", noun="committee")])
     st.subheader("Trades")
     only_rel = st.checkbox("Only committee-relevant (sector heuristic)")
     show(tr[tr["committee_relevant"]] if only_rel else tr, download=f"trades_{bid}",
-         phone_cols=["tx_date", "ticker", "tx_type", "amount_est"], name="member_trades")
+         phone_cols=["tx_date", "ticker", "tx_type", "amount_est"], name="member_trades",
+         links=[dict(col="ticker", view="Ticker", key="ticker_sel", noun="ticker")])
 
 elif page == "Committee":
     ct = db.committees_with_trading(con)
@@ -533,11 +607,14 @@ elif page == "Committee":
     only_traders = st.checkbox("Only members with trades", value=True)
     if only_traders:
         cm = cm[cm["trades"] > 0]
-    show(cm[["name", "chamber", "party", "title", "trades", "est_volume"]],
-         phone_cols=["name", "party", "trades", "est_volume"], name="committee_members")
+    show(cm[["bioguide_id", "name", "chamber", "party", "title", "trades", "est_volume"]],
+         phone_cols=["name", "party", "trades", "est_volume"], name="committee_members",
+         links=[dict(col="name", idcol="bioguide_id", view="Member", key="member_sel", noun="member")])
     st.subheader("Trades by members of this committee")
     show(tr, download=f"committee_{cid}_trades",
-         phone_cols=["member", "tx_date", "ticker", "tx_type", "amount_est"], name="committee_trades")
+         phone_cols=["member", "tx_date", "ticker", "tx_type", "amount_est"], name="committee_trades",
+         links=[dict(col="member", idcol="bioguide_id", view="Member", key="member_sel", noun="member"),
+                dict(col="ticker", view="Ticker", key="ticker_sel", noun="ticker")])
 
 else:
     tickers = db.all_tickers(con)
@@ -560,7 +637,8 @@ else:
         b.metric(vol_label, short(vol), help=esc(f"{vol_full}. Exact: {usd(vol)}"))
         vol_caption(vol)
         st.caption("Trades were disclosed up to 45 days after they happened.")
-        show(df, download=f"ticker_{t}_trades", phone_cols=["member", "tx_date", "tx_type", "amount_est"], name="ticker_trades")
+        show(df, download=f"ticker_{t}_trades", phone_cols=["member", "tx_date", "tx_type", "amount_est"], name="ticker_trades",
+             links=[dict(col="member", idcol="bioguide_id", view="Member", key="member_sel", noun="member")])
 
     with tab_price:
         a, b, c, d = st.columns(4)
