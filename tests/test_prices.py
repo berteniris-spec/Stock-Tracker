@@ -89,6 +89,22 @@ def test_valuation():
     assert prices._num(float("nan")) is None and prices._num(-3) is None and prices._num("x") is None and prices._num(12.5) == 12.5
 
 
+def test_fundamentals_update():
+    con = _con(tempfile.mkdtemp())
+    con.execute("INSERT INTO ticker_info(ticker, kind) VALUES ('NOPE', 'etf')")
+    n = len(db.FUNDAMENTAL_KEYS)
+
+    def fetch(sym):
+        if sym == "AAPL":
+            return tuple(float(i) for i in range(n))
+        raise RuntimeError("boom")
+
+    assert prices.update_fundamentals(con, fetch, workers=1) == (1, 2)          # the ETF is skipped; BRK-B fails
+    assert db.ticker_fundamentals(con, "AAPL")["roe"] == 1.0
+    prices.update_fundamentals(con, lambda s: 1 / 0, workers=1)                  # a failed run keeps what we had
+    assert db.ticker_fundamentals(con, "AAPL")["roe"] == 1.0
+
+
 def test_brokers():
     verdict, per = brokers.availability("equity", "NMS")
     assert per["DEGIRO"] == "Yes" and per["Trading 212"].startswith("Likely")

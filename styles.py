@@ -114,6 +114,21 @@ label[data-testid="stRadioOption"][data-selected="true"], label[data-testid="stR
 label[data-testid="stRadioOption"] > div > div:first-child:not([data-testid]) { display: none !important; }
 label[data-testid="stRadioOption"] p { margin: 0; line-height: 1.2; }
 label[data-testid="stRadioOption"] > div { align-items: center; }
+/* range bars (Ticker health check): three neutral zones, a marker for the value, a tick for the sector median */
+.rb { margin: -.25rem 0 .35rem; }
+.rb-track { position: relative; display: flex; height: 10px; border-radius: 5px; overflow: visible; }
+.rb-z { display: block; height: 100%; }
+.rb-z0 { background: rgba(31,58,95,.14); border-radius: 5px 0 0 5px; }
+.rb-z1 { background: rgba(31,58,95,.30); }
+.rb-z2 { background: rgba(31,58,95,.14); border-radius: 0 5px 5px 0; }
+.rb-mark { position: absolute; top: -4px; width: 4px; height: 18px; margin-left: -2px; border-radius: 2px; background: #1f3a5f; box-shadow: 0 0 0 2px #f4f2ec; }
+.rb-tick { position: absolute; top: -2px; width: 2px; height: 14px; margin-left: -1px; background: rgba(0,0,0,.55); }
+@media (prefers-color-scheme: dark) {
+  .rb-z0, .rb-z2 { background: rgba(143,171,212,.18); } .rb-z1 { background: rgba(143,171,212,.38); }
+  .rb-mark { background: #8fabd4; box-shadow: 0 0 0 2px #0d1219; } .rb-tick { background: rgba(239,236,227,.7); }
+}
+[class*="st-key-fund_"] { background: rgba(255,255,255,.45); border-radius: 12px; }
+[class*="st-key-fund_"] [data-testid="stMetric"] { background: transparent; border: 0; padding: .25rem 0; }
 /* metrics as cards */
 [data-testid="stMetric"] { background: rgba(255,255,255,.7); border: 1px solid rgba(0,0,0,.12); border-radius: 12px; padding: .85rem 1rem; }
 [data-testid="stMetricDelta"], [data-testid="stMetricDelta"] * { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }

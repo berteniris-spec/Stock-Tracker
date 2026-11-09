@@ -17,10 +17,12 @@ import importlib
 
 import brokers
 import db
+import fundamentals as fd
 import styles
 
 # Streamlit keeps imported modules alive between redeploys; reload so a new db.py/brokers.py is picked up without a reboot.
 importlib.reload(db)
+importlib.reload(fd)
 importlib.reload(brokers)
 importlib.reload(styles)
 
@@ -657,24 +659,54 @@ else:
         else:
             st.caption(f"Price is the end-of-day close on {prof['as_of']}, refreshed nightly; it is not a live quote.")
         if prof["kind"] != "etf":
-            a, b, c = st.columns(3)
-            na = "n/a"
-            a.metric("P/E", f"{prof['pe']:.1f}" if prof["pe"] else na,
-                     help="Price-to-earnings: the share price divided by the profit per share over the last 12 months. "
-                          "It is roughly how many years of today's profit you pay for. Higher means the market expects growth "
-                          "(or the stock is expensive); lower means cheaper or slower growth. Compare with similar companies: "
-                          "the long-run US market average is about 15 to 20.")
-            b.metric("Fwd P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na,
-                     help="Forward P/E: the same ratio, but using the profit analysts expect over the next 12 months. "
-                          "If it is lower than the P/E, analysts expect profits to grow; if higher, they expect them to fall.")
-            c.metric("PEG", f"{prof['peg']:.2f}" if prof["peg"] else na,
-                     help="PEG: the P/E divided by expected yearly profit growth, so fast growers are not penalised for a high P/E. "
-                          "Around 1 is often read as fairly priced for its growth, well below 1 as cheap, above 2 as expensive. "
-                          "Definitions vary by data provider, and it needs a growth estimate, so it is often missing.")
-            st.caption("Ratios come from Yahoo Finance, refreshed nightly, and are shown for reference: a low or high number is not "
-                       "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies).")
-            st.caption("P/E is price over the last 12 months of earnings, Fwd P/E uses expected earnings for the next 12 months, "
-                       "and PEG is P/E divided by expected earnings growth. n/a means no positive earnings, no growth figure or no data.")
+            fund = db.ticker_fundamentals(con, t)
+            vals = {"pe": prof["pe"], "forward_pe": prof["forward_pe"], "peg": prof["peg"], **fund}
+            meds = db.sector_medians(con, prof["sector"])
+            have = any(fund[k] is not None for k in db.FUNDAMENTAL_KEYS)
+            st.subheader("Health check")
+            st.caption("Each number has a plain-language reading and a typical range. Ranges are rough guides, not verdicts: "
+                       "industries differ, so compare with the sector median where it is shown. On each bar the thick marker is this stock, "
+                       "the darker middle is the typical range, and the thin line is the sector median. Company figures are in US dollars.")
+            if not have:
+                st.caption("The health metrics (margins, debt, growth and more) are not loaded for this stock yet; "
+                           "they are fetched nightly.")
+            size = fd.market_cap_size(fund["market_cap"])
+            for card, title in fd.CARDS:
+                keys = [k for k, sp in fd.SPEC.items() if sp["card"] == card]
+                with st.container(border=True, key=f"fund_{card}"):
+                    st.markdown(f"**{title}**")
+                    line = fd.headline(card, vals, size)
+                    if line:
+                        st.markdown(line)
+                    for i in range(0, len(keys), 3):
+                        cols = st.columns(3)
+                        for col, k in zip(cols, keys[i:i + 3]):
+                            v, med = vals.get(k), meds.get(k)
+                            col.metric(fd.SPEC[k]["label"], fd.fmt(k, v), help=fd.SPEC[k]["help"])
+                            if v is not None:
+                                col.markdown(fd.bar_html(k, v, med[0] if med else None), unsafe_allow_html=True)
+                            col.caption(esc(fd.context_text(k, v, med)))
+                    if card == "risk":
+                        cols = st.columns(3)
+                        cols[0].metric("Market cap", fd.money(fund["market_cap"]), help="Total value of all the company's shares "
+                                       "(share price times shares outstanding). Large is above $10B, mid-size $2B to $10B, small below $2B. "
+                                       "Smaller companies tend to swing more.")
+                        cols[0].caption(size or "No data from the provider.")
+                        lo, hi = fund["week52_low"], fund["week52_high"]
+                        pos = fd.range_position(lo, hi, prof["price"])
+                        cols[1].metric("52-week range", esc(f"${lo:,.0f} to ${hi:,.0f}") if lo and hi else "n/a",
+                                       help="The lowest and highest share price over the last year. The marker shows where the last close "
+                                            "sits between them: far left is near the yearly low, far right near the yearly high.")
+                        if pos is not None:
+                            cols[1].markdown(fd.range_bar_html(pos, f"Last close is {100 * pos:.0f}% of the way from the 52-week low to the high"),
+                                             unsafe_allow_html=True)
+                            cols[1].caption(f"Last close is {100 * pos:.0f}% of the way from the yearly low to the high.")
+                        text = fd.analyst_text(fund["analyst_mean"], fund["analyst_count"], fund["target_price"], prof["price"])
+                        if text:
+                            st.caption(esc(text))
+            st.caption("Ratios and company figures come from Yahoo Finance, refreshed nightly, and are shown for reference: a number "
+                       "inside or outside its typical range is not by itself a reason to buy or sell. Missing means the provider has no "
+                       "figure (for example no positive earnings).")
     with tab_brokers:
         st.subheader("Where can I buy it from the Netherlands?")
         verdict, per = brokers.availability(prof["kind"], prof["exchange_code"])

@@ -91,6 +91,28 @@ CREATE TABLE IF NOT EXISTS ticker_valuation (
     fetched_at TEXT,
     source     TEXT
 );
+CREATE TABLE IF NOT EXISTS ticker_fundamentals (
+    ticker          TEXT PRIMARY KEY,
+    profit_margin   REAL,                     -- fractions (0.25 = 25%), negatives allowed
+    roe             REAL,
+    revenue_growth  REAL,
+    earnings_growth REAL,
+    debt_to_equity  REAL,                     -- ratio (1.5 = debt is 1.5x equity)
+    current_ratio   REAL,
+    free_cash_flow  REAL,                     -- USD
+    price_to_sales  REAL,
+    price_to_book   REAL,
+    dividend_yield  REAL,                     -- fraction
+    beta            REAL,
+    market_cap      REAL,                     -- USD
+    week52_low      REAL,
+    week52_high     REAL,
+    analyst_mean    REAL,                     -- 1 = strong buy ... 5 = sell
+    analyst_count   INTEGER,
+    target_price    REAL,
+    fetched_at      TEXT,
+    source          TEXT
+);
 CREATE TABLE IF NOT EXISTS fx_rate (
     pair       TEXT PRIMARY KEY,              -- 'USD_PER_EUR'
     rate       REAL,
@@ -410,6 +432,35 @@ def ticker_profile(con, ticker):
     keys = ("name", "kind", "exchange_code", "exchange", "sector", "price", "prev_close", "as_of",
             "pe", "forward_pe", "peg")
     return dict(zip(keys, tuple(row)))
+
+
+FUNDAMENTAL_KEYS = ("profit_margin", "roe", "revenue_growth", "earnings_growth", "debt_to_equity", "current_ratio", "free_cash_flow",
+                    "price_to_sales", "price_to_book", "dividend_yield", "beta", "market_cap", "week52_low", "week52_high",
+                    "analyst_mean", "analyst_count", "target_price")
+
+
+def ticker_fundamentals(con, ticker):
+    """Health metrics for one ticker, plus the valuation ratios (all None when unknown)."""
+    row = con.execute(f"SELECT {', '.join(FUNDAMENTAL_KEYS)} FROM ticker_fundamentals WHERE ticker = ?", (ticker,)).fetchone()
+    out = dict(zip(FUNDAMENTAL_KEYS, tuple(row))) if row else dict.fromkeys(FUNDAMENTAL_KEYS)
+    return out
+
+
+def sector_medians(con, sector, min_n=5):
+    """{metric: (median, n)} over the traded tickers in the same sector; metrics with fewer than min_n values are left out."""
+    if not sector or sector in ("Unmapped", "Unclassified"):
+        return {}
+    df = _df(con, f"""
+        SELECT tv.pe, tv.forward_pe, tv.peg, {', '.join('tf.' + k for k in FUNDAMENTAL_KEYS)}
+        FROM ticker_sector ts
+        JOIN ticker_valuation tv USING (ticker) LEFT JOIN ticker_fundamentals tf USING (ticker)
+        WHERE ts.sector = ?""", (sector,))
+    out = {}
+    for col in df.columns:
+        vals = pd.to_numeric(df[col], errors="coerce").dropna()
+        if len(vals) >= min_n:
+            out[col] = (float(vals.median()), int(len(vals)))
+    return out
 
 
 def usd_per_eur(con):

@@ -111,10 +111,42 @@ def _num(v):
     return v if v == v and 0 < v < 1e6 else None
 
 
+_INFO = {}      # symbol -> Yahoo quote summary, so valuation and fundamentals share one request per symbol
+
+
+def yahoo_info(symbol):
+    if symbol not in _INFO:
+        import yfinance as yf
+        _INFO[symbol] = yf.Ticker(symbol).info or {}
+    return _INFO[symbol]
+
+
+def _signed(v):
+    """A finite number (negatives allowed: margins and growth can be below zero), else None."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return v if v == v and abs(v) < 1e15 else None
+
+
+def yahoo_fundamentals(symbol):
+    """Tuple in db.FUNDAMENTAL_KEYS order for one symbol; raises on a failed request."""
+    i = yahoo_info(symbol)
+    de = _signed(i.get("debtToEquity"))
+    n = _signed(i.get("numberOfAnalystOpinions"))
+    return (_signed(i.get("profitMargins")), _signed(i.get("returnOnEquity")), _signed(i.get("revenueGrowth")),
+            _signed(i.get("earningsGrowth")), de / 100 if de is not None else None,        # Yahoo gives percent
+            _num(i.get("currentRatio")), _signed(i.get("freeCashflow")),
+            _num(i.get("priceToSalesTrailing12Months")), _num(i.get("priceToBook")),
+            _signed(i.get("trailingAnnualDividendYield")), _signed(i.get("beta")), _num(i.get("marketCap")),
+            _num(i.get("fiftyTwoWeekLow")), _num(i.get("fiftyTwoWeekHigh")),
+            _num(i.get("recommendationMean")), int(n) if n else None, _num(i.get("targetMeanPrice")))
+
+
 def yahoo_valuation(symbol):
     """(pe, forward_pe, peg) for one symbol from Yahoo's quote summary; raises on a failed request."""
-    import yfinance as yf
-    info = yf.Ticker(symbol).info or {}
+    info = yahoo_info(symbol)
     return (_num(info.get("trailingPE")), _num(info.get("forwardPE")),
             _num(info.get("trailingPegRatio")) or _num(info.get("pegRatio")))
 
@@ -148,6 +180,37 @@ def update_valuations(con, fetch=yahoo_valuation, limit=None, workers=4):
     return stored, len(tickers)
 
 
+def update_fundamentals(con, fetch=yahoo_fundamentals, limit=None, workers=4):
+    """Fetch the health metrics for traded stocks (ETFs have none). Returns (stored, attempted)."""
+    from concurrent.futures import ThreadPoolExecutor
+    tickers = [t for t in tickers_to_price(con, limit)
+               if (con.execute("SELECT kind FROM ticker_info WHERE ticker = ?", (t,)).fetchone() or [None])[0] != "etf"]
+    now = datetime.now(timezone.utc).isoformat()
+    cols = ", ".join(db.FUNDAMENTAL_KEYS)
+    marks = ",".join("?" * len(db.FUNDAMENTAL_KEYS))
+    sets = ", ".join(f"{k}=excluded.{k}" for k in db.FUNDAMENTAL_KEYS)
+
+    def one(t):
+        for attempt in range(2):
+            try:
+                return t, fetch(yahoo_symbol(t))
+            except Exception:
+                time.sleep(2)
+        return t, None
+
+    stored = 0
+    with ThreadPoolExecutor(workers) as ex:
+        for t, vals in ex.map(one, tickers):
+            if vals is None:                          # request failed: keep the previous values
+                continue
+            with con:
+                con.execute(f"INSERT INTO ticker_fundamentals(ticker, {cols}, fetched_at, source) VALUES (?, {marks}, ?, 'yahoo') "
+                            f"ON CONFLICT(ticker) DO UPDATE SET {sets}, fetched_at=excluded.fetched_at, source=excluded.source",
+                            (t, *vals, now))
+            stored += 1
+    return stored, len(tickers)
+
+
 def update_fx(con, fetch=fetch_ecb):
     rate, day = fetch()
     with con:
@@ -177,6 +240,10 @@ def main():
           f"{con.execute('SELECT COUNT(pe) FROM ticker_valuation').fetchone()[0]}, forward P/E: "
           f"{con.execute('SELECT COUNT(forward_pe) FROM ticker_valuation').fetchone()[0]}, PEG: "
           f"{con.execute('SELECT COUNT(peg) FROM ticker_valuation').fetchone()[0]}")
+    stored, attempted = update_fundamentals(con, limit=args.limit)       # reuses the quote summaries fetched above
+    print(f"health metrics stored for {stored}/{attempted} stocks; with profit margin: "
+          f"{con.execute('SELECT COUNT(profit_margin) FROM ticker_fundamentals').fetchone()[0]}")
+    _INFO.clear()
     missing = [r[0] for r in con.execute(
         "SELECT DISTINCT t.ticker FROM trades t LEFT JOIN ticker_price tp USING (ticker) "
         "WHERE t.ticker <> '' AND tp.ticker IS NULL ORDER BY 1 LIMIT 25")]

@@ -103,7 +103,7 @@ def check_ticker_tabs(at, label, expect_etf=None, expect_price=None):
     etf = [m.value for m in pr.metric if m.label == "Type"] == ["ETF / fund"]
     if pl[:4] != ["Close (USD)", "Close (EUR)", "Exchange", "Type"]:
         bad.append(f"Price metrics {pl}")
-    if etf != (pl[4:] == []) or (not etf and pl[4:] != ["P/E", "Fwd P/E", "PEG"]):
+    if etf != (pl[4:] == []) or (not etf and (pl[4:7] != ["P/E", "Fwd P/E", "PEG"] or "Beta" not in pl or "52-week range" not in pl)):
         bad.append(f"Price ratios {pl[4:]} for etf={etf}")
     if expect_etf is not None and etf != expect_etf:
         bad.append(f"expected etf={expect_etf}")

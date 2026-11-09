@@ -37,6 +37,9 @@ Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash comma
 ## Redesign (2026-11-09)
 Top bar plus Settings popover, pill nav (`page` radio), search (`search`), card metrics, lighter theme (`config.toml` changed with the owner's OK), clickable ranking rows (`rank_*` containers, `open_ov_*` buttons) at all widths, party dot + word, ▲/▼ trade types, net-buying and sector charts, Member and Committee headers. The old desktop ranking tables and the `ph_ov_` swap are gone. Dark theme not yet reviewed visually.
 
+## Health check (2026-11-09)
+Ticker Price tab: four cards from `fundamentals.py` (zones, headlines, range-bar HTML) over `ticker_fundamentals` (new table, filled by `prices.update_fundamentals` nightly). Sector medians via `db.sector_medians`. Needs one nightly run to have real data; check the workflow log line "health metrics stored for N/M stocks" and that Yahoo field scaling (`debtToEquity` percent, `trailingAnnualDividendYield` fraction) is right.
+
 ## Open work
 - Mobile pass: steps 1 to 7 done; no step 8 is defined.
 - Owner decides whether to rename the Price tab to "Price and ratios".

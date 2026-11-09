@@ -3,6 +3,12 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Health check on the Ticker page
+- The Price tab has a "Health check" under the price strip: four cards (How is it priced? Is it profitable and growing? Can it handle trouble? How big and how volatile?), each with a one-sentence factual headline, metrics with tooltips, a range bar (marker = this stock, shaded middle = typical range, thin line = sector median) and a visible line with the zone word, the typical range and the sector median. New metrics: price/sales, price/book, dividend yield, profit margin, return on equity, revenue and earnings growth, debt/equity, current ratio, free cash flow, beta, market cap, 52-week range, analyst consensus and target (worded as opinion). P/E, Fwd P/E and PEG moved into the first card. Zones say lower, typical or higher, never good or bad.
+- Data: new table `ticker_fundamentals` (schema change, owner approved), created by `CREATE TABLE IF NOT EXISTS` so an older database works and shows a "not loaded yet" note. `prices.py` fills it nightly from the same Yahoo quote summary as the valuation ratios (one cached request per symbol; `update_fundamentals`). Sector medians come from traded tickers in the same sector (at least 5 values). Logic and the bar HTML live in `fundamentals.py`.
+- Verified: `scripts/test.sh --smoke` 0 failures; new `tests/test_fundamentals.py` and `test_fundamentals_update`; Chromium screenshots at 1280 and 390 using a scratch copy of the database filled with invented numbers.
+- Not checked: real Yahoo values (the nightly job has not run with this code; field names `profitMargins`, `debtToEquity` and so on are from Yahoo's quote summary and may be missing or differently scaled for some tickers; the first nightly run prints how many stocks got a profit margin), dark theme, the deployed app, screen readers on the bars.
+
 ## Ratio tooltips
 - P/E, Fwd P/E and PEG on the Ticker Price tab have plain-language tooltips (what it is, how to read higher and lower, a rough reference range). The visible captions stay, because tooltips are not reachable on touch.
 - Verified: `scripts/test.sh --smoke` 0 failures. Not checked in a browser.
