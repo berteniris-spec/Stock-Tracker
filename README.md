@@ -43,7 +43,7 @@ found, so the layout needs a look), `no_text` (scanned paper filing, no OCR), `u
 (filer isn't a current member) or `fetch_failed`. House only; the Senate has no bulk download.
 Run it from the **House import** GitHub Action if your own network blocks the Clerk's site.
 
-Run the offline tests with `python tests/test_house_importer.py`.
+Run the offline tests with `scripts/test.sh` (add `--smoke` for the UI smoke test).
 
 ## Sectors
 

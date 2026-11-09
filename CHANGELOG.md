@@ -3,6 +3,13 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Workflow cleanup: contradicting rules
+- `guard_paths.py`: a shell command now asks only when it really writes a protected file inside the project (redirect into it, tee, `sed -i`, rm, mv, a copy whose destination is it, or `open(..., "w")`). Reads and copies out of `congress.db` (for example to a scratch folder) pass, and `->` in a Python heredoc no longer triggers it. Edits to `db.py` ask only when they touch the schema (CREATE/ALTER/DROP, SCHEMA, `_migrate`); this enforces the "database schema" rule in `CLAUDE.md`. Checked with 17 sample commands and edits.
+- `scripts/ui_check.py` uses `~/Library/Caches/ms-playwright` on a Mac when `PLAYWRIGHT_BROWSERS_PATH` is not set, so `.venv/bin/python scripts/ui_check.py <dir>` works and matches an allow rule; docstring and `/ui-check` updated (Settings popover, ranking lists).
+- `.claude/settings.local.json` (git-ignored) cut to fetch, `pull --ff-only`, the nightly-run `gh` commands and `python3 -`; the broad `gh pr *`, merge, checkout, switch and branch rules and the dead one-offs are gone, matching "no PR, merge or branch deletion unless the owner asks".
+- `/ship` now matches practice (`git add <paths>`, `-A` after a clean `git status`), step numbers fixed, pushes need no prompt. README test command and stale `docs/CONTEXT.md` lines (Settings popover, logo, rankings, hooks) corrected.
+- Verified: `scripts/test.sh --smoke` 0 failures; `ui_check.py` ran with no environment variable. Not checked: that Claude Code re-reads the permission files without a restart.
+
 ## Price history and chart
 - New table `ticker_price_history(ticker, date, close)` (schema change, owner approved), created by `CREATE TABLE IF NOT EXISTS`. `prices.py` now stores every close in the nightly 7-day download (not only the newest) and, for tickers with fewer than 60 stored closes, backfills 3 years (`backfill_history`, chunks of 25). After the first run the backfill costs nothing. `db.price_history` reads it.
 - Ticker Price tab: a "Price history" line chart of daily closes (selected currency) with a marker on each day a member traded: triangle up purchase, triangle down sale, diamond exchange, plus the colour (never colour alone), tooltip with member, date, type and amount range. A caption says how many trades are not marked (before the first close or no close within 5 days), and a table of the closes sits in an expander.

@@ -17,18 +17,18 @@ Congress trades: a personal Streamlit dashboard joining US congressional stock t
 - Tests: `scripts/test.sh [--smoke]`. UI check: `.venv/bin/python scripts/ui_check.py <dir>` (Playwright, not a repo dependency; version must match the Chromium build).
 
 ## Workflow
-Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash commands: `/ship`, `/resume`, `/ui-check`. Hooks in `.claude/settings.json`: cloud session start installs and fetches the database; the path guard asks before editing protected paths; the stop hook runs `scripts/test.sh` when a `.py` file changed. Hooks, commands and permissions have not been seen in a live session. Commit straight to `main` after tests pass (owner's choice, 2026-11-08); PRs only when the owner asks.
+Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash commands: `/ship`, `/resume`, `/ui-check`. Hooks in `.claude/settings.json`: cloud session start installs and fetches the database; the path guard asks before editing protected paths; the stop hook runs `scripts/test.sh` when a `.py` file changed. Commits, pushes and the ship commands run without prompts (allowed in `.claude/settings.json`); `guard_paths.py` asks only for real writes to `congress.db`, workflows, `config.toml` and schema edits in `db.py`. Commit straight to `main` after tests pass (owner's choice, 2026-11-08); PRs only when the owner asks.
 
 ## Design
 - Design system: https://claude.ai/artifact/FKb1gTaSePVdEYWRPffmuA (private). Theme in `.streamlit/config.toml` (cream `#efece3`, blue `#8fabd4`, deep blue `#4a70a9`; dark derived). Chart colours are Okabe-Ito.
-- Logo: PNG (the SVG is an incomplete trace), full colour on both themes, above the h1, not a link, 48px high at 640px and narrower, 64px wider.
+- Logo: PNG (the SVG is an incomplete trace), full colour on both themes, 40px high beside the title in the top bar, not a link.
 - Copy: plain-language, sentence case, `n/a` in metrics and blank in tables for missing values, compact headline amounts (`$102M`) with exact figures in tooltips and a visible caption.
 
 ## Decisions that still bind
 - No approval gates between agents; they stop only for the cases in `AGENTS.md`.
-- No sidebar. View switch is a horizontal `st.radio` (key `page`); Settings expander holds basis, currency and Refresh. Help text that carries meaning is a visible caption, not a tooltip.
+- No sidebar. View switch is a pill-styled horizontal `st.radio` (key `page`); a Settings popover in the top bar holds basis, currency and Refresh. Help text that carries meaning is a visible caption, not a tooltip.
 - Metric strips are two per row at 640px and narrower; labels 18 characters or fewer (`check_metrics` enforces it).
-- Phone tables swap at 640px: both renderings are in the page and CSS shows one (`st-key-ph_*` / `st-key-tbl_*`). Rankings are button rows; trade and member tables are a wrapping `st.table` (max 25 rows) with a "Show all columns" checkbox.
+- Phone tables swap at 640px: both renderings are in the page and CSS shows one (`st-key-ph_*` / `st-key-tbl_*`). Rankings are one list of button rows at every width (`rank_*`); trade and member tables are a wrapping `st.table` (max 25 rows) with a "Show all columns" checkbox.
 - Ticker view uses plain `st.tabs(["Trades", "Price", "Brokers"])`: no tab in the URL, so a shared link opens Trades.
 - Brokers are collapsed expanders plus a table in an expander.
 - Volume is a midpoint estimate of filed ranges; committee membership is a current snapshot.

@@ -1,6 +1,6 @@
 ---
 description: Screenshot the app at phone and desktop widths in light and dark and report layout problems (Tester, fixes nothing)
-allowed-tools: Bash(python scripts/ui_check.py:*), Bash(python3 scripts/ui_check.py:*), Bash(*/bin/python scripts/ui_check.py:*), Bash(ls:*), Read, Glob
+allowed-tools: Bash(python scripts/ui_check.py:*), Bash(python3 scripts/ui_check.py:*), Bash(.venv/bin/python scripts/ui_check.py:*), Bash(ls:*), Read, Glob
 ---
 
 Role: Tester. Report problems; fix nothing.
@@ -13,8 +13,8 @@ Role: Tester. Report problems; fix nothing.
 
 Notes:
 - Use the interpreter that has both playwright and streamlit: `.venv/bin/python` locally. Plain `python` on a Mac may be a global install that fails on streamlit or lacks playwright.
-- macOS: there is no `/opt/pw-browsers`. Set `PLAYWRIGHT_BROWSERS_PATH` to a folder holding a chromium build (for example `PLAYWRIGHT_BROWSERS_PATH=/some/dir .venv/bin/python -m playwright install chromium`, only if the owner asks to install) and use the same variable when running the script.
+- macOS: there is no `/opt/pw-browsers`; the script uses `~/Library/Caches/ms-playwright` automatically when it exists, so no variable is needed. Set `PLAYWRIGHT_BROWSERS_PATH` only for a different folder (installing Chromium: `PLAYWRIGHT_BROWSERS_PATH=/some/dir .venv/bin/python -m playwright install chromium`, only if the owner asks).
 - The playwright version must match the installed chromium build: run `ls /opt/pw-browsers` (for example playwright 1.56.0 for chromium-1194). Install nothing unless the owner asks.
-- Only the default state is captured (USD, default volume basis, Settings expander closed). EUR, the other volume basis and the opened Settings expander at 390 are not checked.
+- Only the default state is captured (USD, default volume basis, Settings popover closed). EUR, the other volume basis and the opened Settings popover at 390 are not checked.
 
 Environment dependencies: the Python package `playwright` (not in `requirements.txt`) and browsers in `/opt/pw-browsers` (cloud) or in `PLAYWRIGHT_BROWSERS_PATH` (local). If either is missing, say so; do not install anything unless the owner asks.

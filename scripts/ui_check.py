@@ -4,17 +4,18 @@ Usage: .venv/bin/python scripts/ui_check.py [OUTPUT_DIR] [--ids Member=ID Commit
 (locally use the project's .venv; plain `python` may be a global install without playwright or with an
 incompatible streamlit. In the cloud, plain `python` is fine.)
 
-Needs the `playwright` package and a Chromium in PLAYWRIGHT_BROWSERS_PATH (default /opt/pw-browsers, which
-exists only in the cloud image). On a Mac set it to any folder, e.g.
-`PLAYWRIGHT_BROWSERS_PATH=/some/dir .venv/bin/python -m playwright install chromium`, then run the script
+Needs the `playwright` package and a Chromium in PLAYWRIGHT_BROWSERS_PATH (default /opt/pw-browsers in the cloud
+image, or ~/Library/Caches/ms-playwright on a Mac when that folder exists, so no variable is needed there). To
+use another folder, e.g.
+`PLAYWRIGHT_BROWSERS_PATH=/some/dir .venv/bin/python -m playwright install chromium`, run the script
 with the same variable. Neither is in requirements.txt. Read-only: it never writes to congress.db. The interpreter that runs
 this script must import both playwright and streamlit (it starts the app with the same interpreter),
 and the playwright version must match the installed chromium build.
-Limit: only the default state is captured (USD, default volume basis). The Settings expander is not
+Limit: only the default state is captured (USD, default volume basis). The Settings popover is not
 opened, and EUR and the Filed minimum basis are not captured. A sidebar or its toggle still in the
 page is reported as an advisory line and never changes the exit code.
-Overview only: at 390 every ranking list button must be 44px tall and inside the viewport and no ranking table may
-show; at 1280 the ranking tables show and the lists do not. A failure there exits 1 like page-level overflow.
+Overview only: at every width each ranking list button must be 44px tall (at 390; inside the viewport at every width).
+A failure there exits 1 like page-level overflow.
 Ticker only: each tab (Trades, Price, Brokers) is clicked and measured like the page; every tab must be 44px tall and
 inside the viewport at 390, the page must not scroll sideways at 320 (an extra 320 light shot), the Trades tab must show
 the phone table at 640 and narrower and the grid above, and the 390 page height is reported per tab. Failures there exit 1.
@@ -32,7 +33,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-DEFAULT_BROWSERS = "/opt/pw-browsers"
+MAC_BROWSERS = Path.home() / "Library" / "Caches" / "ms-playwright"      # where `playwright install` puts Chromium on a Mac
+DEFAULT_BROWSERS = "/opt/pw-browsers"                                  # the cloud image
+if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ and not Path(DEFAULT_BROWSERS).exists() and MAC_BROWSERS.exists():
+    DEFAULT_BROWSERS = str(MAC_BROWSERS)
 BROWSERS_FROM_ENV = "PLAYWRIGHT_BROWSERS_PATH" in os.environ
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", DEFAULT_BROWSERS)
 
