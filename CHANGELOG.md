@@ -3,6 +3,11 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Mobile pass, step 6 (chart polish)
+- Monthly volume chart: the x axis now labels only the first month of each quarter ("Q1 2026") instead of a thinned list of months; the axis title is "Quarter (first month shown)", tooltips still show the month. The legend moved below the chart so the plot keeps the full width at 320px; the title wraps onto two lines instead of being cut off; chart height 320 to 380 so the plot stays tall with the legend below.
+- Verified: `scripts/test.sh --smoke` (0 failures); `ui_check.py` (advisories only, all carried over); Chromium screenshots of the chart at 320 and 1280, light theme.
+- Not checked: dark theme chart, 390px, Safari and Firefox, the deployed app.
+
 ## Workflow improvements
 - `scripts/test.sh [--smoke]` is the one test command (picks `.venv/bin/python` or `python`; exit 2 if `--smoke` has no `congress.db`). `CLAUDE.md`, `AGENTS.md`, `README.md`, `/ship` and the stop hook use it. CI (`ci.yml`) is unchanged because workflows are protected.
 - `.claude/settings.json` now allows `.venv/bin/python tests/...` and `ui_check.py`, `scripts/test.sh`, `git checkout -b`, `git switch -c` and read-only `gh pr` commands. `/resume` lists PRs with `gh pr list`.

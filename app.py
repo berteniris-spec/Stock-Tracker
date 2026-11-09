@@ -379,16 +379,22 @@ if page == "Overview":
             is_light = st.context.theme.type != "dark"
         except Exception:
             is_light = True
+        # Label only the first month of each quarter ("Q1 2024"); the other bars stay unlabelled but keep their tooltips.
+        QUARTER_LABEL = ("(slice(datum.value, 5, 7) == '01' || slice(datum.value, 5, 7) == '04' || "
+                         "slice(datum.value, 5, 7) == '07' || slice(datum.value, 5, 7) == '10') ? "
+                         "'Q' + (floor((toNumber(slice(datum.value, 5, 7)) - 1) / 3) + 1) + ' ' + slice(datum.value, 0, 4) : ''")
         bar_outline = {"stroke": "rgba(0,0,0,0.6)", "strokeWidth": 1} if is_light else {}   # chart-partial is only 1.9:1 on cream
-        chart = (alt.Chart(mv, title=f"Estimated trade volume per month ({cur}, by trade date)")
+        chart = (alt.Chart(mv, title=["Estimated trade volume per month", f"({cur}, by trade date)"])
                  .mark_bar(**bar_outline)
-                 .encode(x=alt.X("month:O", title="Month", axis=alt.Axis(labelAngle=-45, labelOverlap="parity")),
+                 .encode(x=alt.X("month:O", title="Quarter (first month shown)", axis=alt.Axis(labelAngle=-45, labelOverlap=False, ticks=False,
+                                                                       labelExpr=QUARTER_LABEL)),
                          y=alt.Y("est_volume:Q", title=f"Estimated volume ({cur})", axis=alt.Axis(format="~s")),
-                         color=alt.Color("tx_type:N", title="Type", scale=alt.Scale(domain=types, range=palette)),
+                         color=alt.Color("tx_type:N", title="Type", scale=alt.Scale(domain=types, range=palette),
+                                         legend=alt.Legend(orient="bottom", columns=2)),
                          order=alt.Order("tx_type:N"),
                          tooltip=[alt.Tooltip("month:O", title="Month"), alt.Tooltip("tx_type:N", title="Type"),
                                   alt.Tooltip("est_volume:Q", title=f"Volume ({cur})", format=",.0f")])
-                 .properties(height=320))
+                 .properties(height=380, padding={"top": 8, "left": 5, "right": 5, "bottom": 5}))
         st.altair_chart(chart, use_container_width=True)
         with st.expander("Show the chart data as a table"):
             table = (mv.pivot(index="month", columns="tx_type", values="est_volume").fillna(0)
