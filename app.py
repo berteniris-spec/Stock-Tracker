@@ -675,7 +675,8 @@ else:
             except Exception:
                 light = True
             base = alt.Chart(line).mark_line(color="#1f3a5f" if light else "#8fabd4", strokeWidth=1.5).encode(
-                x=alt.X("date:T", title=None), y=alt.Y("close:Q", title=f"Close ({cur})", scale=alt.Scale(zero=False)),
+                x=alt.X("date:T", title=None, axis=alt.Axis(format="%b %Y", tickCount=6, labelOverlap=True, labelAngle=-30)),
+                y=alt.Y("close:Q", title=f"Close ({cur})", scale=alt.Scale(zero=False)),
                 tooltip=[alt.Tooltip("date:T", title="Date"), alt.Tooltip("close:Q", title=f"Close ({cur})", format=",.2f")])
             layers = [base]
             if not marks.empty:

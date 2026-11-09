@@ -3,6 +3,12 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Dark theme review
+- Looked at Overview, Member, Committee and the Ticker Trades, Price and Brokers tabs in dark at 390 and 1280, using the full nightly database (16.5 MB, from the `data` branch) in a scratch copy. Layout, cards, pills, search, badges, tables, range bars and the price chart read fine.
+- Fixed: the Health check cards were a light grey in dark (a light rule came after the dark override in `styles.py`); the price chart's x axis showed month names without years over three years, now `Jan 2024`-style ticks about every 6 months.
+- Seen, not fixed: in the price chart legend the marker shapes are white (the plot markers are coloured; the labels carry the meaning).
+- Not checked: a real phone, Safari, Firefox, the deployed app, screen readers.
+
 ## Workflow cleanup: contradicting rules
 - `guard_paths.py`: a shell command now asks only when it really writes a protected file inside the project (redirect into it, tee, `sed -i`, rm, mv, a copy whose destination is it, or `open(..., "w")`). Reads and copies out of `congress.db` (for example to a scratch folder) pass, and `->` in a Python heredoc no longer triggers it. Edits to `db.py` ask only when they touch the schema (CREATE/ALTER/DROP, SCHEMA, `_migrate`); this enforces the "database schema" rule in `CLAUDE.md`. Checked with 17 sample commands and edits.
 - `scripts/ui_check.py` uses `~/Library/Caches/ms-playwright` on a Mac when `PLAYWRIGHT_BROWSERS_PATH` is not set, so `.venv/bin/python scripts/ui_check.py <dir>` works and matches an allow rule; docstring and `/ui-check` updated (Settings popover, ranking lists).

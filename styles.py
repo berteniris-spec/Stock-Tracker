@@ -126,9 +126,9 @@ label[data-testid="stRadioOption"] > div { align-items: center; }
 @media (prefers-color-scheme: dark) {
   .rb-z0, .rb-z2 { background: rgba(143,171,212,.18); } .rb-z1 { background: rgba(143,171,212,.38); }
   .rb-mark { background: #8fabd4; box-shadow: 0 0 0 2px #0d1219; } .rb-tick { background: rgba(239,236,227,.7); }
-  [class*="st-key-fund_"] { background: rgba(255,255,255,.04); }
 }
 [class*="st-key-fund_"] { background: rgba(255,255,255,.45); border-radius: 12px; }
+@media (prefers-color-scheme: dark) { [class*="st-key-fund_"] { background: rgba(255,255,255,.04); } }
 [class*="st-key-fund_"] [data-testid="stMetric"] { background: transparent; border: 0; padding: .25rem 0; }
 /* metrics as cards */
 [data-testid="stMetric"] { background: rgba(255,255,255,.7); border: 1px solid rgba(0,0,0,.12); border-radius: 12px; padding: .85rem 1rem; }

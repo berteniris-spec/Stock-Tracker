@@ -34,7 +34,7 @@ Roles and the loop: `AGENTS.md` (size the loop to the change). Commands: `/ship`
 - Risk: `styles.py` targets Streamlit 1.66.x DOM. After any Streamlit upgrade run `/ui-check`. `requirements.txt` pins `streamlit>=1.66.1,<1.67`.
 
 ## Open work
-- Dark theme and real-phone review of the redesign, health check and price chart; owner decides whether to rename the Price tab "Price and ratios".
+- Real-phone review of the redesign, health check and price chart (dark theme was reviewed on 2026-11-09 in Chromium); owner decides whether to rename the Price tab "Price and ratios".
 - Small: focus ring after mouse clicks; delta-down red on pink about 3.9:1; Brokers tab long at 320px.
 - Next feature idea: returns after each trade versus SPY (needs SPY history and adjusted closes); cluster-buying signals.
 - Owner: a square favicon mark; design-system updates (SVG trace, `Logo.md`, Tabs pattern).
@@ -45,4 +45,4 @@ Roles and the loop: `AGENTS.md` (size the loop to the change). Commands: `/ship`
 Filings lag trades by up to 45 days. Sector is unknown for trades with no ticker. EUR uses one latest rate for all dates. Yahoo figures can be missing or odd for a ticker. UI work was checked in Chromium only: not Safari, Firefox, real touch, screen readers or the deployed app.
 
 ## Next step
-Review the redesign in dark theme and on a real phone; then the small items under Open work.
+Check the redesign on a real phone (open the deployed app after "Refresh data"); then the small items under Open work.
