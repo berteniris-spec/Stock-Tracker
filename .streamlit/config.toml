@@ -6,7 +6,7 @@ backgroundColor = "#f4f2ec"
 secondaryBackgroundColor = "#e7e3d8"
 textColor = "#000000"
 greenColor = "#005f99"   # delta-up: blue, not green
-redColor = "#a03500"     # delta-down: vermillion
+redColor = "#8f2f00"     # delta-down: vermillion
 
 [theme.dark]
 primaryColor = "#8fabd4"

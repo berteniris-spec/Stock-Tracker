@@ -12,12 +12,12 @@ CSS = """
 /* radio: the unselected ring was the 20% rule colour (1.7:1); about 55% ink gives at least 3:1 */
 label[data-testid="stRadioOption"]:not([data-selected="true"]) > div > div:first-child { border-color: rgba(0,0,0,.55) !important; }
 /* radio: visible keyboard focus */
-label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; outline-offset: 2px; }
+label[data-testid="stRadioOption"]:has(input:focus-visible) { outline: 2px solid #4a70a9; outline-offset: 2px; }
 /* links: primary is 4.25:1 on cream, too low for small text; link is 5.1:1 */
 [data-testid="stMarkdownContainer"] a { color: #3f6399; }
 @media (prefers-color-scheme: dark) {
   label[data-testid="stRadioOption"]:not([data-selected="true"]) > div > div:first-child { border-color: rgba(239,236,227,.55) !important; }
-  label[data-testid="stRadioOption"]:focus-within { outline-color: #8fabd4; }
+  label[data-testid="stRadioOption"]:has(input:focus-visible) { outline-color: #8fabd4; }
   [data-testid="stMarkdownContainer"] a { color: #8fabd4; }
 }
 /* tabs (Ticker view): 44px tall, selected = bold plus underline, readable unselected text, visible keyboard focus; matched by role, not Streamlit's hashed classes */
@@ -103,7 +103,7 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 .stMarkdownBadge { white-space: normal !important; display: inline-block !important; max-width: 100%; overflow: visible !important; text-overflow: clip !important; }
 .st-key-brand img { height: 40px; width: auto !important; object-fit: contain; }
 .st-key-brand [data-testid="stElementToolbar"] { display: none; }
-.st-key-brand h1 { font-size: 1.4rem; font-weight: 700; padding: 0; letter-spacing: -.01em; line-height: 1.2; }
+.st-key-brand h1 { overflow-wrap: normal; word-break: normal; font-size: 1.4rem; font-weight: 700; padding: 0; letter-spacing: -.01em; line-height: 1.2; }
 [data-testid="stHeading"] a { display: none; }
 .st-key-settings_slot { flex: 0 0 auto; width: auto; margin-left: auto; }
 h2, [data-testid="stHeading"] h2 { font-size: 1.2rem; font-weight: 650; letter-spacing: -.01em; padding-top: .75rem; }
@@ -133,7 +133,7 @@ label[data-testid="stRadioOption"] > div { align-items: center; }
 /* metrics as cards */
 [data-testid="stMetric"] { background: rgba(255,255,255,.7); border: 1px solid rgba(0,0,0,.12); border-radius: 12px; padding: .85rem 1rem; }
 [data-testid="stMetricDelta"], [data-testid="stMetricDelta"] * { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
-@media (max-width: 359px) { [data-testid="stMetric"] { padding: .7rem .6rem; } [data-testid="stMetricDelta"] { flex-wrap: wrap; font-size: .8rem; } }
+@media (max-width: 359px) { .st-key-brand { gap: .4rem; } .st-key-brand img { height: 32px; } .st-key-brand h1 { font-size: 1.15rem; } [data-testid="stMetric"] { padding: .7rem .6rem; } [data-testid="stMetricDelta"] { flex-wrap: wrap; font-size: .8rem; } }
 /* inputs and expanders on the quiet surface */
 [data-baseweb="select"] > div { background: #fff; border: 1px solid rgba(0,0,0,.25); }
 [data-testid="stExpander"] details { background: rgba(255,255,255,.55); border-radius: 12px; }

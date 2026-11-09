@@ -3,6 +3,13 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Small fixes
+- At 320px the title wrapped as "Congres s trades"; the logo and title are now smaller there and wrap between words.
+- Delta-down colour darkened (`redColor` light `#a03500` to `#8f2f00`): 5.4:1 to 6.2:1 on its tinted background (computed).
+- Radio focus ring now uses `:focus-visible` instead of `:focus-within`. In Chromium the ring still shows after a mouse click on a view pill, because the page re-renders and refocuses the control (it reports `:focus-visible`); keyboard focus is correct. Not fixed.
+- Brokers tab at 320px: looked at, left as is (collapsed expanders, about 1,800px of content in total).
+- Verified: `scripts/test.sh --smoke`; Chromium at 320 and 1280.
+
 ## Favicon is the logo
 - The browser tab icon is now the app logo (`assets/favicon.png`, the logo padded to a square so it is not stretched). Verified: `scripts/test.sh --smoke`. Not checked: how it looks in a browser tab or on the deployed app.
 

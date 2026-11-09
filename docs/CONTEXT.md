@@ -35,7 +35,7 @@ Roles and the loop: `AGENTS.md` (size the loop to the change). Commands: `/ship`
 
 ## Open work
 - Real-phone review of the redesign, health check and price chart (dark theme was reviewed on 2026-11-09 in Chromium); owner decides whether to rename the Price tab "Price and ratios".
-- Small: focus ring after mouse clicks; delta-down red on pink about 3.9:1; Brokers tab long at 320px.
+- Small: focus ring still shows after a mouse click on the view pills (Streamlit refocuses on rerun).
 - Next feature idea: returns after each trade versus SPY (needs SPY history and adjusted closes); cluster-buying signals.
 - Owner: a square favicon mark; design-system updates (SVG trace, `Logo.md`, Tabs pattern).
 - Data: Senate trades (CSV only); OCR for scanned filings; review `partial` filings; 25 tickers have no price or history (delisted or renamed).
