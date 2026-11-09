@@ -230,23 +230,26 @@ def n_trades(n):
     return f"{int(n):,} trade{'s' if int(n) != 1 else ''}"
 
 
-def ranking(name, df, cols, ids, goto, noun, label, download=None):
-    """Overview ranking table. Wide screens: the selectable table plus its caption. Phone: a list of full-width buttons.
+PARTY_DOT = {"Republican": ":red[●]", "Democrat": ":blue[●]"}
 
-    Both are in the page at every width and CSS shows one at Streamlit's 640px breakpoint (Python cannot see the
-    viewport). `label(row)` is the text after the rank, already markdown-escaped. Ranks 11 and up sit in an expander.
+
+def party_label(party):
+    """Party as a coloured dot plus the word, so colour is never the only signal."""
+    return f"{PARTY_DOT.get(str(party), ':gray[●]')} {md_esc(party)}"
+
+
+def ranking(name, df, cols, ids, goto, noun, label, download=None):
+    """Overview ranking: a list of full-width buttons (click or tap a row to open it), the same at every width.
+
+    `label(row)` is the text after the rank, already markdown-escaped. Ranks 11 and up sit in an expander.
     """
     if df.empty:                                  # nothing to rank: just the empty table, no captions or list
         show(df[cols], key=name, ids=ids, goto=goto, download=download)
         return
-    with st.container(key=f"tbl_cap_{name}"):
-        st.caption(f"Tick the box at the start of a row to open that {noun}.")
-    with st.container(key=f"ph_cap_{name}"):
-        st.caption(f"Tap a row to open that {noun}. Volumes are estimated from "
-                   f"{'the lowest figure' if vol_label == 'Min. volume' else 'the midpoint'} of each filed range.")
-    show(df[cols], key=name, ids=ids, goto=goto, name=name, desktop_only=True)
     ids = list(ids)
-    with st.container(key=f"ph_{name}"):
+    with st.container(key=f"rank_{name}"):
+        st.caption(f"Click or tap a row to open that {noun}. Volumes are estimated from "
+                   f"{'the lowest figure' if vol_label == 'Min. volume' else 'the midpoint'} of each filed range.")
         slot = st.container()
         for i, row in enumerate(df.itertuples()):
             if i == 10:
@@ -351,7 +354,7 @@ if page == "Overview":
     ranking("ov_members", top_members, ["name", "party", "trades", "est_volume"], top_members["bioguide_id"],
             ("Member", "member_sel"), "member",
             lambda r: "\u00a0· ".join(x for x in (
-                md_esc(r.name) + (f" ({md_esc(r.party)})" if _has(r.party) else "") if _has(r.name) else "",
+                md_esc(r.name) + (f" ({party_label(r.party)})" if _has(r.party) else "") if _has(r.name) else "",
                 n_trades(r.trades), md_esc(short(r.est_volume))) if x))
     st.subheader("Committees by trading volume")
     top_committees = db.committees_with_trading(con).head(25)

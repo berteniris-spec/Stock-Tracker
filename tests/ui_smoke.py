@@ -170,7 +170,7 @@ def check_open_buttons(at, label):
             if re.search(r"(?<!\\)\$", text):
                 bad.append(f"row {i}: unescaped $ in {text!r}")
         noun = view.lower()
-        want = ("Tap a row to open that %s. Volumes are estimated from %s of each filed range."
+        want = ("Click or tap a row to open that %s. Volumes are estimated from %s of each filed range."
                 % (noun, "the lowest figure" if at.radio(key="basis").value == "Filed minimum" else "the midpoint"))
         if not has_caption(at, want):
             bad.append(f"phone caption {want!r} missing")

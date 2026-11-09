@@ -69,7 +69,7 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
   [class*="st-key-ph_"] th { text-align: left; font-weight: 600; color: inherit; border-bottom: 2px solid currentColor; }
 }
 /* ranking lists: full-width rows that wrap, left-aligned, 44px at least */
-[class*="st-key-ph_ov_"], [class*="st-key-ph_ov_"] [data-testid="stVerticalBlock"] { gap: .35rem; }
+[class*="st-key-rank_ov_"], [class*="st-key-rank_ov_"] [data-testid="stVerticalBlock"] { gap: .35rem; }
 [class*="st-key-open_ov_"], [class*="st-key-open_ov_"] [data-testid="stButton"], [class*="st-key-open_ov_"] button { width: 100%; }
 [class*="st-key-open_ov_"] button { justify-content: flex-start; text-align: left; height: auto; min-height: 44px; padding-top: .4rem; padding-bottom: .4rem; }
 [class*="st-key-open_ov_"] button, [class*="st-key-open_ov_"] button * { white-space: normal; overflow-wrap: anywhere; text-align: left; }
@@ -82,12 +82,14 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 /* 320px safety net: a table that is still too wide scrolls inside its own box (visible overflow stays at 360-640 so it shows up as a failure) */
 @media (max-width: 359px) { [class*="st-key-ph_"] [data-testid="stTable"] > div { overflow-x: auto; } }
 /* list rows: the boundary is ink at 55% (the rule colour was about 1.5:1) */
-[class*="st-key-open_ov_"] button { border-color: rgba(0,0,0,.55); }
+[class*="st-key-open_ov_"] button { border-color: rgba(0,0,0,.18); background: rgba(255,255,255,.7); border-radius: 12px; }
+[class*="st-key-open_ov_"] button:hover { border-color: #1f3a5f; background: #fff; }
 /* keyboard focus: the same ring as the radios on buttons and checkboxes (Streamlit's own glow is about 1.9:1) */
 [data-testid="stButton"] button:focus-visible, [data-testid="stDownloadButton"] button:focus-visible,
 [data-testid="stCheckbox"] label:has(input:focus-visible) { outline: 2px solid #4a70a9; outline-offset: 2px; }
 @media (prefers-color-scheme: dark) {
-  [class*="st-key-open_ov_"] button { border-color: rgba(239,236,227,.55); }
+  [class*="st-key-open_ov_"] button { border-color: rgba(239,236,227,.25); background: rgba(255,255,255,.05); }
+  [class*="st-key-open_ov_"] button:hover { border-color: #8fabd4; background: rgba(255,255,255,.09); }
   [data-testid="stButton"] button:focus-visible, [data-testid="stDownloadButton"] button:focus-visible,
   [data-testid="stCheckbox"] label:has(input:focus-visible) { outline-color: #8fabd4; }
 }

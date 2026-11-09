@@ -109,9 +109,8 @@ RANK_JS = r"""
   const label = (el) => (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 30);
   const buttons = [...document.querySelectorAll('[class*="st-key-open_ov"] button')];
   const list = buttons.filter(shown);
-  const grids = [...document.querySelectorAll('[class*="st-key-tbl_ov_"] [data-testid="stDataFrame"]')];
-  return {
-    buttons: buttons.length, listShown: list.length, grids: grids.length, gridsShown: grids.filter(shown).length,
+    return {
+    buttons: buttons.length, listShown: list.length,
     short: list.filter((b) => b.getBoundingClientRect().height < 43.5).map((b) => label(b) + ' ' + Math.round(b.getBoundingClientRect().height) + 'px'),
     outside: list.filter((b) => { const r = b.getBoundingClientRect(); return r.left < -1 || r.right > vw + 1; }).map(label),
   };
@@ -120,29 +119,18 @@ RANK_JS = r"""
 
 
 def ranking_findings(page, width):
-    """Problems with the Overview ranking tables at this width (empty list = fine)."""
-    if width <= 640:  # open the "Show ranks 11 to N" expanders so those rows are measured too
-        for summary in page.query_selector_all('[class*="st-key-ph_ov_"] summary'):
-            summary.click()
-        page.wait_for_timeout(500)
+    """Problems with the Overview ranking lists at this width (empty list = fine). The list is the same at every width."""
+    for summary in page.query_selector_all('[class*="st-key-rank_ov_"] summary'):  # open "Show ranks 11 to N" so those rows are measured too
+        summary.click()
+    page.wait_for_timeout(500)
     r = page.evaluate(RANK_JS)
-    if not r["grids"]:  # empty ranking tables: no list and nothing to swap
-        return []
     out = []
-    if width <= 640:
-        if not r["buttons"]:
-            out.append("no list buttons")
-        if r["short"]:
-            out.append(f"{len(r['short'])} list buttons under 44px: " + "; ".join(r["short"][:3]))
-        if r["outside"]:
-            out.append("list buttons outside the viewport: " + "; ".join(r["outside"][:3]))
-        if r["gridsShown"]:
-            out.append(f"{r['gridsShown']} ranking tables still visible")
-    else:
-        if r["gridsShown"] != r["grids"]:
-            out.append(f"only {r['gridsShown']} of {r['grids']} ranking tables visible")
-        if r["listShown"]:
-            out.append(f"{r['listShown']} list buttons visible")
+    if not r["buttons"]:
+        out.append("no list buttons")
+    if r["short"]:
+        out.append(f"{len(r['short'])} list buttons under 44px: " + "; ".join(r["short"][:3]))
+    if r["outside"]:
+        out.append("list buttons outside the viewport: " + "; ".join(r["outside"][:3]))
     return out
 
 
