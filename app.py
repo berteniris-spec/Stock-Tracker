@@ -262,10 +262,12 @@ def ranking(name, df, cols, ids, goto, noun, label, download=None):
 
 
 st.markdown(styles.CSS, unsafe_allow_html=True)
-with st.container(key="brand"):
-    if LOGO.exists():   # a missing file must not break the app
-        st.image(str(LOGO), width=169, alt="StockTrader logo")
-    st.title("Congress trades")
+with st.container(key="topbar", horizontal=True, vertical_alignment="center"):
+    with st.container(key="brand", horizontal=True, vertical_alignment="center"):
+        if LOGO.exists():   # a missing file must not break the app
+            st.image(str(LOGO), width=40, alt="StockTrader logo")
+        st.title("Congress trades")
+    settings_slot = st.container(key="settings_slot")
 VIEWS = ["Overview", "Member", "Committee", "Ticker"]
 SELECT_KEYS = {"Member": "member_sel", "Committee": "committee_sel", "Ticker": "ticker_sel"}
 if "page" not in st.session_state:        # first load of this session: restore the view from a shared link
@@ -290,7 +292,7 @@ _goto = st.session_state.pop("_goto", None)
 if _goto:
     st.session_state["page"], st.session_state[_goto[1]] = _goto[0], _goto[2]
 page = st.radio("View", VIEWS, key="page", horizontal=True, label_visibility="collapsed")
-with st.expander("Settings"):
+with settings_slot, st.popover("Settings", icon=":material/tune:"):
     basis = st.radio(
         "Volume basis", ["Midpoint estimate", "Filed minimum"], key="basis", horizontal=True)
     st.caption("Filings give ranges, some very wide (\\$5M-\\$25M): the midpoint can overstate a trade; "
@@ -331,19 +333,7 @@ if not paper.empty:
     n_members = paper["bioguide_id"].nunique()
     gap = (f"{len(paper)} paper filing{'s' if len(paper) != 1 else ''} not imported "
            f"({n_members} member{'s' if n_members != 1 else ''}).")
-    st.caption(f"**Coverage gap:** {gap} Details under About this data.")
-with st.expander("About this data"):
-    st.markdown(
-        "- **Volume** is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in Settings).\n"
-        "- **Filings lag trades** by up to 45 days, so a trade is old news by the time it is public.\n"
-        "- **Committee data** is a current snapshot, not membership as of each trade date.\n"
-        + (f"- **Sector** is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%), from the FinanceDatabase "
-           "classification; sectors are approximate and the committee-relevance flag only applies where a sector is known.\n" if total else ""))
-    if not paper.empty:
-        with st.container(key="paper_filings"):
-            st.markdown("Some members may have traded more than shown. Filings not imported:")
-            rows = "\n".join(f"| {r.member} | {r.year} | [Open filing {r.doc_id} (PDF)]({r.url}) |" for r in paper.itertuples())
-            st.markdown("| Member | Year | Filing |\n|---|---|---|\n" + rows)
+    st.markdown(f":orange-badge[:material/info: Coverage gap: {gap}]", help="Details under About this data, at the bottom of the page.")
 
 if page == "Overview":
     sync_url("Overview")
@@ -547,3 +537,18 @@ else:
                    "broker's site. Pick a broker supervised in the EU (check the AFM register). Dutch residents should also file a "
                    "W-8BEN with their broker so US dividends are withheld at 15% instead of 30%. This is information, not "
                    "investment advice; because of the filing delay, a politician's trade is old news by the time it is public.")
+
+
+with st.expander("About this data"):
+    st.markdown(
+        "- **Volume** is estimated from disclosure ranges (midpoint by default; switch to the filed minimum in Settings).\n"
+        "- **Filings lag trades** by up to 45 days, so a trade is old news by the time it is public.\n"
+        "- **Committee data** is a current snapshot, not membership as of each trade date.\n"
+        + (f"- **Sector** is known for {known:,} of {total:,} trades ({100 * known / total:.0f}%), from the FinanceDatabase "
+           "classification; sectors are approximate and the committee-relevance flag only applies where a sector is known.\n" if total else ""))
+    if not paper.empty:
+        with st.container(key="paper_filings"):
+            st.markdown("Some members may have traded more than shown. Filings not imported:")
+            rows = "\n".join(f"| {r.member} | {r.year} | [Open filing {r.doc_id} (PDF)]({r.url}) |" for r in paper.itertuples())
+            st.markdown("| Member | Year | Filing |\n|---|---|---|\n" + rows)
+

@@ -246,7 +246,7 @@ def main():
     else:
         failures.append("sidebar")
         print("::error title=UI smoke: sidebar::the sidebar is not empty")
-    if any(e.label == "Settings" for e in at.expander) and at.button(key="refresh") is not None:
+    if at.button(key="refresh") is not None and at.radio(key="basis") is not None:
         print("ok Settings expander and refresh button")   # the refresh button is not clicked: it would download the database
     else:
         failures.append("settings")

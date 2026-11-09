@@ -91,11 +91,38 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
   [data-testid="stButton"] button:focus-visible, [data-testid="stDownloadButton"] button:focus-visible,
   [data-testid="stCheckbox"] label:has(input:focus-visible) { outline-color: #8fabd4; }
 }
-/* logo above the page title: 48px high on a phone, 64px above (the 169x144 file is 2x sharp at both) */
-.st-key-brand img { max-width: 100%; height: 48px; width: auto !important; object-fit: contain; }
-/* no hover toolbar (fullscreen button) on the logo */
+/* redesign: one compact top bar (logo, title, settings), pill navigation, card metrics, quiet chrome */
+[data-testid="stMainBlockContainer"] { padding-top: 4rem; max-width: 1200px; }
+[data-testid="stAppDeployButton"] { display: none; }
+.st-key-topbar { justify-content: space-between; flex-wrap: nowrap; margin-bottom: .25rem; }
+.st-key-brand { gap: .6rem; flex: 1 1 0 !important; width: auto !important; min-width: 0; flex-wrap: nowrap !important; }
+.stMarkdownBadge { white-space: normal; display: inline-block; max-width: 100%; overflow: visible; text-overflow: clip; }
+.st-key-brand img { height: 40px; width: auto !important; object-fit: contain; }
 .st-key-brand [data-testid="stElementToolbar"] { display: none; }
-@media (min-width: 641px) { .st-key-brand img { height: 64px; } }
+.st-key-brand h1 { font-size: 1.4rem; font-weight: 700; padding: 0; letter-spacing: -.01em; line-height: 1.2; }
+[data-testid="stHeading"] a { display: none; }
+.st-key-settings_slot { flex: 0 0 auto; width: auto; margin-left: auto; }
+h2, [data-testid="stHeading"] h2 { font-size: 1.2rem; font-weight: 650; letter-spacing: -.01em; padding-top: .75rem; }
+/* view switch as pills: the radio dot is hidden, the selected option is filled */
+label[data-testid="stRadioOption"] { border: 1px solid rgba(0,0,0,.25); border-radius: 999px; padding: 0 1rem; background: transparent; display: inline-flex; align-items: center; justify-content: center; }
+label[data-testid="stRadioOption"][data-selected="true"] { background: #1f3a5f; border-color: #1f3a5f; }
+label[data-testid="stRadioOption"][data-selected="true"], label[data-testid="stRadioOption"][data-selected="true"] * { color: #fff !important; font-weight: 600; }
+label[data-testid="stRadioOption"] > div > div:first-child:not([data-testid]) { display: none !important; }
+label[data-testid="stRadioOption"] p { margin: 0; line-height: 1.2; }
+label[data-testid="stRadioOption"] > div { align-items: center; }
+/* metrics as cards */
+[data-testid="stMetric"] { background: rgba(255,255,255,.7); border: 1px solid rgba(0,0,0,.12); border-radius: 12px; padding: .85rem 1rem; }
+/* inputs and expanders on the quiet surface */
+[data-baseweb="select"] > div { background: #fff; border: 1px solid rgba(0,0,0,.25); }
+[data-testid="stExpander"] details { background: rgba(255,255,255,.55); border-radius: 12px; }
+@media (prefers-color-scheme: dark) {
+  label[data-testid="stRadioOption"] { border-color: rgba(239,236,227,.35); }
+  label[data-testid="stRadioOption"][data-selected="true"] { background: #8fabd4; border-color: #8fabd4; }
+  label[data-testid="stRadioOption"][data-selected="true"], label[data-testid="stRadioOption"][data-selected="true"] * { color: #0d1219 !important; }
+  [data-testid="stMetric"] { background: rgba(255,255,255,.05); border-color: rgba(239,236,227,.18); }
+  [data-baseweb="select"] > div { background: #14202f; border-color: rgba(239,236,227,.35); }
+  [data-testid="stExpander"] details { background: rgba(255,255,255,.04); }
+}
 /* checkboxes: 44px rows ("Show all columns", "Only ...") */
 [data-testid="stCheckbox"] label { min-height: 44px; align-items: center; }
 label[data-testid="stRadioOption"] { min-height: 44px; align-items: center; }
