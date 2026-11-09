@@ -27,7 +27,7 @@ Roles and the loop: `AGENTS.md` (size the loop to the change). Commands: `/ship`
 - No sidebar. Meaningful help text is a visible caption, not only a tooltip.
 - Metric labels 18 characters or fewer (`check_metrics`); strips two per row at 640px and narrower.
 - Phone tables swap at 640px (`st-key-ph_*` / `st-key-tbl_*`). Rankings are one list of button rows at every width (`rank_*`).
-- Tables link onward by row select plus an "Open … from this table" picker (works on a phone).
+- Tables link onward by clicking a cell (no checkbox column) plus an "Open … from this table" picker (works on a phone).
 - Ticker view: `st.tabs(["Trades", "Price", "Brokers"])`, no tab in the URL.
 - Health check zones say lower, typical or higher, never good or bad; analyst views are worded as opinion.
 - Volume is a midpoint estimate of filed ranges; committee membership is a current snapshot.

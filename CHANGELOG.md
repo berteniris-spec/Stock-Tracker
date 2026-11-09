@@ -3,6 +3,10 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Table row checkboxes removed
+- The linked tables (Member, Committee, Ticker) no longer show the checkbox column: they use cell selection, so clicking any cell opens that row's member, committee or ticker (one button each when a row has two). A caption above the picker says so. Seen in dark; the same in light. The "Show all columns" and "Only ..." checkboxes are real options and stay.
+- Verified: `scripts/test.sh --smoke`; Chromium clicks on Committee members, Committee trades (two buttons) and Ticker trades in dark at 1280. Not checked: touch taps on a phone (the selectable grid shows only after "Show all columns").
+
 ## Dark theme review
 - Looked at Overview, Member, Committee and the Ticker Trades, Price and Brokers tabs in dark at 390 and 1280, using the full nightly database (16.5 MB, from the `data` branch) in a scratch copy. Layout, cards, pills, search, badges, tables, range bars and the price chart read fine.
 - Fixed: the Health check cards were a light grey in dark (a light rule came after the dark override in `styles.py`); the price chart's x axis showed month names without years over three years, now `Jan 2024`-style ticks about every 6 months.

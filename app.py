@@ -162,7 +162,8 @@ def _targets(links, i):
 
 def link_row(event, links):
     """After a row is selected in a table: open its only link, or offer one button per link (member and ticker)."""
-    rows = event.selection.rows if event is not None else []
+    sel = event.selection if event is not None else None
+    rows = list(sel.rows) if sel is not None and sel.rows else [c[0] for c in (sel.cells if sel is not None else [])]
     if not rows:
         return
     targets = _targets(links, rows[0])
@@ -196,6 +197,7 @@ def open_from_table(links):
             boxes.append((l, seen))
     if not boxes:
         return
+    st.caption("Click any cell to open that row's " + " or ".join(l["noun"] for l, _ in boxes) + ", or use the picker below.")
     with st.expander("Open a " + " or ".join(l["noun"] for l, _ in boxes) + " from this table"):
         for l, seen in boxes:
             skey = f"goto_{l['name']}_{l['noun']}"
@@ -237,7 +239,7 @@ def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name
     kwargs = dict(on_select="rerun", selection_mode="single-row", key=key) if key else {}
     if links and name and not key:
         key = f"sel_{name}"
-        kwargs = dict(on_select="rerun", selection_mode="single-row", key=key)
+        kwargs = dict(on_select="rerun", selection_mode="single-cell", key=key)     # no checkbox column: click any cell
     styled = df.style.format(fmt, na_rep="") if fmt else df
 
     def grid(**kw):
