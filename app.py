@@ -39,7 +39,7 @@ def download_db(url=DB_URL):
     os.replace(tmp, db.DB_PATH)
 
 
-st.set_page_config(page_title="Congress Trades", layout="wide")
+st.set_page_config(page_title="Congress Trades", page_icon=str(LOGO.with_name("favicon.png")), layout="wide")
 
 if not db.DB_PATH.exists():  # first start on a fresh host: fetch the published database
     try:

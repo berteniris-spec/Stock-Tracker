@@ -3,6 +3,9 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Favicon is the logo
+- The browser tab icon is now the app logo (`assets/favicon.png`, the logo padded to a square so it is not stretched). Verified: `scripts/test.sh --smoke`. Not checked: how it looks in a browser tab or on the deployed app.
+
 ## Overview: Most active members rework
 - "Most active members" now has a "Rank members by" switch (Estimated volume, Number of trades, Last 90 days) and a retitled section. Above the list is a log/log bubble chart of trades against estimated volume (blue circles Democrat, vermillion squares Republican); click a dot to open that member. A table alternative sits in an expander. Each list row shows a buy/sell bar and counts (`▮▮▮▯▯ N buy, M sell`). New query `db.member_activity`.
 - Verified: `scripts/test.sh --smoke`; Chromium at 1280 light (dot click opens the Member view) and 390 dark. Not checked: touch taps on the chart, dark at 1280.
