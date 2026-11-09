@@ -56,14 +56,54 @@ def closes_from_frame(frame, symbols):
     return out
 
 
-def yahoo_download(symbols):
-    """Default downloader: {symbol: [(date, close), ...]} for the last few trading days."""
+def yahoo_download(symbols, period="7d"):
+    """Default downloader: {symbol: [(date, close), ...]} for the last few trading days (or `period`)."""
     import yfinance as yf
-    frame = yf.download(symbols, period="7d", interval="1d", group_by="ticker", auto_adjust=False,
+    frame = yf.download(symbols, period=period, interval="1d", group_by="ticker", auto_adjust=False,
                         progress=False, threads=True)
     if frame is None or frame.empty:
         return {}
     return closes_from_frame(frame, symbols)
+
+
+HISTORY_PERIOD = "3y"      # the first trade in the data is from late 2023
+HISTORY_MIN_ROWS = 60      # a ticker with fewer stored closes than this gets a backfill
+
+
+def yahoo_history(symbols):
+    return yahoo_download(symbols, period=HISTORY_PERIOD)
+
+
+def store_history(con, ticker, series):
+    """Upsert [(date, close), ...] into ticker_price_history (a re-fetched day overwrites). Caller commits."""
+    con.executemany("INSERT INTO ticker_price_history(ticker, date, close) VALUES (?,?,?) "
+                    "ON CONFLICT(ticker, date) DO UPDATE SET close=excluded.close",
+                    [(ticker, d, c) for d, c in series if c == c and c > 0])
+
+
+def backfill_history(con, download=yahoo_history, limit=None, chunk=25):
+    """Download several years of closes for traded tickers that have little stored history. Returns (filled, attempted).
+
+    Runs each night but only does work for tickers short of HISTORY_MIN_ROWS, so after the first run it costs nothing.
+    """
+    have = dict(con.execute("SELECT ticker, COUNT(*) FROM ticker_price_history GROUP BY ticker"))
+    tickers = [t for t in tickers_to_price(con, limit) if have.get(t, 0) < HISTORY_MIN_ROWS]
+    filled = 0
+    for i in range(0, len(tickers), chunk):
+        batch = tickers[i:i + chunk]
+        sym_to_ticker = {yahoo_symbol(t): t for t in batch}
+        try:
+            got = download(list(sym_to_ticker))
+        except Exception as e:                       # one bad batch must not lose the rest
+            print(f"  history batch {i // chunk + 1} failed: {type(e).__name__}: {e}")
+            continue
+        with con:
+            for sym, series in got.items():
+                if series:
+                    store_history(con, sym_to_ticker[sym], series)
+                    filled += 1
+        time.sleep(1)
+    return filled, len(tickers)
 
 
 def tickers_to_price(con, limit=None):
@@ -89,6 +129,7 @@ def update_prices(con, download=yahoo_download, limit=None, chunk=CHUNK):
             for sym, series in got.items():
                 if not series:
                     continue
+                store_history(con, sym_to_ticker[sym], series)      # every close in the window, not only the newest
                 as_of, price = series[-1]
                 prev = series[-2][1] if len(series) > 1 else None
                 con.execute(
@@ -241,6 +282,9 @@ def main():
     print(f"priced {priced}/{attempted} tickers this run; {have}/{total} tickers have a price (newest close {newest})")
     if attempted and not priced:
         print("WARNING: no prices fetched; Yahoo may be blocking this host")
+    filled, attempted = backfill_history(con, limit=args.limit)
+    rows = con.execute("SELECT COUNT(*), COUNT(DISTINCT ticker) FROM ticker_price_history").fetchone()
+    print(f"price history: backfilled {filled}/{attempted} tickers; {rows[0]:,} closes for {rows[1]} tickers stored")
     stored, attempted = update_valuations(con, limit=args.limit)
     print(f"valuation ratios stored for {stored}/{attempted} stocks; with P/E: "
           f"{con.execute('SELECT COUNT(pe) FROM ticker_valuation').fetchone()[0]}, forward P/E: "

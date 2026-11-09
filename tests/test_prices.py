@@ -105,6 +105,31 @@ def test_fundamentals_update():
     assert db.ticker_fundamentals(con, "AAPL")["roe"] == 1.0
 
 
+def test_history():
+    con = _con(tempfile.mkdtemp())
+    # the nightly 7-day download stores every close in the window, and a re-fetched day overwrites
+    prices.update_prices(con, lambda s: {"AAPL": [("2026-10-07", 98.0), ("2026-10-08", 99.0), ("2026-10-09", 100.0)]})
+    h = db.price_history(con, "AAPL")
+    assert list(h["close"]) == [98.0, 99.0, 100.0] and str(h["date"].iloc[0].date()) == "2026-10-07"
+    prices.update_prices(con, lambda s: {"AAPL": [("2026-10-09", 101.0), ("2026-10-12", 102.0)]})
+    assert list(db.price_history(con, "AAPL")["close"]) == [98.0, 99.0, 101.0, 102.0]
+    assert db.price_history(con, "ZZZ").empty
+    # backfill: only tickers short of history are fetched; a failed batch is skipped; non-positive closes are dropped
+    big = [(f"2025-{m:02d}-{d:02d}", 10.0 + d) for m in range(1, 5) for d in range(1, 21)]
+    seen = []
+
+    def dl(symbols):
+        seen.extend(symbols)
+        if "BRK-B" in symbols:
+            raise RuntimeError("boom")
+        return {s: big + [("2025-06-01", 0.0)] for s in symbols if s == "NOPE"}
+
+    assert prices.backfill_history(con, dl, chunk=1) == (1, 3)         # AAPL has 4 rows (< 60), NOPE none, BRK.B fails
+    assert "AAPL" in seen and len(db.price_history(con, "NOPE")) == len(big)
+    seen.clear()
+    assert prices.backfill_history(con, dl, chunk=1)[1] == 2           # NOPE is now full; AAPL and BRK.B still short
+
+
 def test_brokers():
     verdict, per = brokers.availability("equity", "NMS")
     assert per["DEGIRO"] == "Yes" and per["Trading 212"].startswith("Likely")

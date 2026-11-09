@@ -658,6 +658,45 @@ else:
             st.caption("No price found for this ticker (delisted, renamed, not a plain stock, or not fetched yet).")
         else:
             st.caption(f"Price is the end-of-day close on {prof['as_of']}, refreshed nightly; it is not a live quote.")
+        hist = db.price_history(con, t)
+        if not hist.empty:
+            st.subheader("Price history")
+            st.caption("Daily closes. Each marker is a day a member traded this stock: a triangle up for a purchase, a triangle down "
+                       "for a sale, a diamond for an exchange. Hover a marker for who and how much.")
+            cur = "EUR" if CURRENCY == "EUR" and RATE else "USD"
+            line = hist.assign(close=hist["close"].map(conv))
+            tr = df.assign(date=pd.to_datetime(df["tx_date"], errors="coerce")).dropna(subset=["date"]).sort_values("date")
+            marks = pd.merge_asof(tr, line.sort_values("date")[["date", "close"]], on="date", direction="backward",
+                                  tolerance=pd.Timedelta(days=5)).dropna(subset=["close"])
+            types = ["Purchase", "Sale", "Sale (Partial)", "Exchange"]
+            palette = ["#0072B2", "#D55E00", "#E69F00", "#7F7F7F"]
+            try:
+                light = st.context.theme.type != "dark"
+            except Exception:
+                light = True
+            base = alt.Chart(line).mark_line(color="#1f3a5f" if light else "#8fabd4", strokeWidth=1.5).encode(
+                x=alt.X("date:T", title=None), y=alt.Y("close:Q", title=f"Close ({cur})", scale=alt.Scale(zero=False)),
+                tooltip=[alt.Tooltip("date:T", title="Date"), alt.Tooltip("close:Q", title=f"Close ({cur})", format=",.2f")])
+            layers = [base]
+            if not marks.empty:
+                layers.append(alt.Chart(marks).mark_point(filled=True, size=110, opacity=.9, stroke="#ffffff", strokeWidth=.8).encode(
+                    x="date:T", y="close:Q",
+                    color=alt.Color("tx_type:N", title="Type", scale=alt.Scale(domain=types, range=palette), legend=alt.Legend(orient="bottom", columns=2)),
+                    shape=alt.Shape("tx_type:N", title="Type", scale=alt.Scale(domain=types, range=["triangle-up", "triangle-down", "triangle-down", "diamond"]),
+                                    legend=alt.Legend(orient="bottom", columns=2)),
+                    tooltip=[alt.Tooltip("member:N", title="Member"), alt.Tooltip("tx_date:N", title="Trade date"),
+                             alt.Tooltip("tx_type:N", title="Type"), alt.Tooltip("amount_label:N", title="Amount range")]))
+            st.altair_chart(alt.layer(*layers).properties(height=340, padding={"top": 8, "left": 5, "right": 5, "bottom": 5}),
+                            use_container_width=True)
+            dropped = len(tr) - len(marks)
+            st.caption(f"Closes from {hist['date'].min():%d %b %Y} to {hist['date'].max():%d %b %Y}."
+                       + (f" {dropped} of {len(tr)} trades are not marked: they are before the first stored close or on days with no close." if dropped else ""))
+            with st.expander("Show the closes as a table"):
+                st.dataframe(line.sort_values("date", ascending=False).assign(date=lambda d: d["date"].dt.strftime("%Y-%m-%d"))
+                             .rename(columns={"date": "Date", "close": f"Close ({cur})"}).style.format({f"Close ({cur})": "{:,.2f}"}),
+                             hide_index=True, use_container_width=True)
+        else:
+            st.caption("No price history stored for this ticker yet; it is filled by the nightly update.")
         if prof["kind"] != "etf":
             fund = db.ticker_fundamentals(con, t)
             vals = {"pe": prof["pe"], "forward_pe": prof["forward_pe"], "peg": prof["peg"], **fund}

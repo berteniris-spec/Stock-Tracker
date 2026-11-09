@@ -40,6 +40,9 @@ Top bar plus Settings popover, pill nav (`page` radio), search (`search`), card 
 ## Health check (2026-11-09)
 Ticker Price tab: four cards from `fundamentals.py` (zones, headlines, range-bar HTML) over `ticker_fundamentals` (new table, filled by `prices.update_fundamentals` nightly). Sector medians via `db.sector_medians`. Needs one nightly run to have real data; check the workflow log line "health metrics stored for N/M stocks" and that Yahoo field scaling (`debtToEquity` percent, `trailingAnnualDividendYield` fraction) is right.
 
+## Price history (2026-11-09)
+`ticker_price_history` is filled nightly by `prices.py` (7-day append plus a 3-year backfill for tickers under 60 closes). The Price tab charts it with trade markers. Next idea: returns after each trade versus SPY (needs SPY in the history and a stored adjusted close for dividends and splits).
+
 ## Open work
 - Mobile pass: steps 1 to 7 done; no step 8 is defined.
 - Owner decides whether to rename the Price tab to "Price and ratios".

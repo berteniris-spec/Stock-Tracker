@@ -91,6 +91,12 @@ CREATE TABLE IF NOT EXISTS ticker_valuation (
     fetched_at TEXT,
     source     TEXT
 );
+CREATE TABLE IF NOT EXISTS ticker_price_history (
+    ticker TEXT NOT NULL,
+    date   TEXT NOT NULL,                     -- YYYY-MM-DD
+    close  REAL NOT NULL,                     -- unadjusted end-of-day close, USD
+    PRIMARY KEY (ticker, date)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS ticker_fundamentals (
     ticker          TEXT PRIMARY KEY,
     profit_margin   REAL,                     -- fractions (0.25 = 25%), negatives allowed
@@ -432,6 +438,13 @@ def ticker_profile(con, ticker):
     keys = ("name", "kind", "exchange_code", "exchange", "sector", "price", "prev_close", "as_of",
             "pe", "forward_pe", "peg")
     return dict(zip(keys, tuple(row)))
+
+
+def price_history(con, ticker):
+    """Daily closes for one ticker, oldest first, as a DataFrame with columns date (datetime) and close."""
+    df = _df(con, "SELECT date, close FROM ticker_price_history WHERE ticker = ? ORDER BY date", (ticker,))
+    df["date"] = pd.to_datetime(df["date"])
+    return df
 
 
 FUNDAMENTAL_KEYS = ("profit_margin", "roe", "revenue_growth", "earnings_growth", "debt_to_equity", "current_ratio", "free_cash_flow",
