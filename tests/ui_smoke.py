@@ -212,6 +212,21 @@ def fresh():
     return at
 
 
+def check_search():
+    """The global search opens the chosen member, committee or ticker, and clears itself."""
+    for suffix, view, sel in (("member", "Member", "member_sel"), ("committee", "Committee", "committee_sel"), ("ticker", "Ticker", "ticker_sel")):
+        at = fresh()
+        opt = next(o for o in at.selectbox(key="search").options if o.endswith(" \u00b7 " + suffix))
+        at.selectbox(key="search").select(opt).run()
+        ok = (not at.exception and at.radio(key="page").value == view and at.selectbox(key=sel).value is not None
+              and at.selectbox(key="search").value is None)
+        if not ok:
+            failures.append(f"search {suffix}")
+            print(f"::error title=UI smoke: search {suffix}::page={at.radio(key='page').value} exception={[e.value for e in at.exception][:1]}")
+        else:
+            print("ok", f"search opens {view}: {opt}")
+
+
 def main():
     con = sqlite3.connect(ROOT / "congress.db")
     random.seed(1)
@@ -223,6 +238,7 @@ def main():
         "SELECT DISTINCT c.id FROM committees c JOIN memberships m ON m.committee_id=c.id "
         "JOIN trades t ON t.bioguide_id=m.bioguide_id WHERE c.parent_id IS NULL")]
 
+    check_search()
     at = fresh()
     check(at, "Overview")
     if [t.value for t in at.title] != ["Congress trades"]:

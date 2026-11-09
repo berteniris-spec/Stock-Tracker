@@ -348,6 +348,14 @@ def monthly_volume(con):
         GROUP BY month, tx_type ORDER BY month""")
 
 
+def sector_volume(con):
+    """Estimated volume per sector (trades without a ticker or sector count as 'Unmapped')."""
+    return _df(con, f"""
+        SELECT COALESCE(ts.sector, 'Unmapped') AS sector, COUNT(*) AS trades, COALESCE(SUM({_est()}), 0) AS est_volume
+        FROM trades t LEFT JOIN ticker_sector ts USING (ticker)
+        GROUP BY sector ORDER BY est_volume DESC""")
+
+
 def paper_filings(con, bioguide_id=None):
     """Paper (scanned) filings that couldn't be imported, with a link to each original PDF."""
     cols = ["doc_id", "year", "bioguide_id", "member", "url"]

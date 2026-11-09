@@ -3,6 +3,16 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Redesign (compact header, cards, search, new charts)
+- Top bar: small logo and title (1.4rem) on one row with a Settings popover (volume basis, currency, refresh) replacing the Settings expander; the Deploy button is hidden by CSS. The view switch is a row of pills (still the `page` radio). "About this data" moved to the bottom of the page; the coverage gap is an orange badge.
+- Theme: light theme changed in `.streamlit/config.toml` (owner approved): primary `#1f3a5f`, background `#f4f2ec`, secondary `#e7e3d8` (table headers and selects are no longer blue). Metrics, expanders and ranking rows are white-tinted cards with a 1px border and 12px radius; dark theme colours unchanged.
+- Overview rankings: the tick-the-checkbox tables are gone. Members, committees and tickers are clickable rows at every width (same keys `open_ov_*`), with a party dot plus the word. The CSV button for top tickers stays. Trade tables show ▲ Purchase / ▼ Sale (display only; CSV unchanged).
+- Search: one box under the view pills for members, committees and tickers; picking one opens it (`search` key).
+- Charts: new "Net buying per month" (purchases minus sales) and "Volume by sector" (top 12, with a table expander); `db.sector_volume` is a new query, no schema change.
+- Member and Committee pages start with a header: name, party badge, chamber and state, top committees (member) or member counts (committee).
+- Verified: `scripts/test.sh --smoke` 0 failures (new `check_search`; `ui_check.py` ranking check rewritten for the single list); `ui_check.py` advisories only; Chromium screenshots at 320, 390 and 1280, light theme, for Overview and Member.
+- Not checked: dark theme visually, Safari and Firefox, the deployed app, the Committee and Ticker headers visually, keyboard and screen-reader use of the pills and search. Not done: committee-relevant flag as a badge on trade rows (tables are canvas grids), inline volume bars in the rankings.
+
 ## Mobile pass, step 7 (readability)
 - The "Open filing N (PDF)" links in the paper filings table are now 44px high (were 21px). They sit in a keyed container (`paper_filings`).
 - At 320px the compact tables use a smaller font (.78rem), so the three Committee trades tables (HSSY, HLIG, HSGO) no longer scroll inside their box (step 4b).

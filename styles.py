@@ -96,9 +96,11 @@ label[data-testid="stRadioOption"]:focus-within { outline: 2px solid #4a70a9; ou
 /* redesign: one compact top bar (logo, title, settings), pill navigation, card metrics, quiet chrome */
 [data-testid="stMainBlockContainer"] { padding-top: 4rem; max-width: 1200px; }
 [data-testid="stAppDeployButton"] { display: none; }
+[data-testid="stPopoverButton"] { min-height: 44px; }
+[data-testid="stMarkdownContainer"]:has(.stMarkdownBadge), [data-testid="stMarkdownContainer"]:has(.stMarkdownBadge) p { overflow: visible; white-space: normal; text-overflow: clip; }
 .st-key-topbar { justify-content: space-between; flex-wrap: nowrap; margin-bottom: .25rem; }
 .st-key-brand { gap: .6rem; flex: 1 1 0 !important; width: auto !important; min-width: 0; flex-wrap: nowrap !important; }
-.stMarkdownBadge { white-space: normal; display: inline-block; max-width: 100%; overflow: visible; text-overflow: clip; }
+.stMarkdownBadge { white-space: normal !important; display: inline-block !important; max-width: 100%; overflow: visible !important; text-overflow: clip !important; }
 .st-key-brand img { height: 40px; width: auto !important; object-fit: contain; }
 .st-key-brand [data-testid="stElementToolbar"] { display: none; }
 .st-key-brand h1 { font-size: 1.4rem; font-weight: 700; padding: 0; letter-spacing: -.01em; line-height: 1.2; }
@@ -114,6 +116,8 @@ label[data-testid="stRadioOption"] p { margin: 0; line-height: 1.2; }
 label[data-testid="stRadioOption"] > div { align-items: center; }
 /* metrics as cards */
 [data-testid="stMetric"] { background: rgba(255,255,255,.7); border: 1px solid rgba(0,0,0,.12); border-radius: 12px; padding: .85rem 1rem; }
+[data-testid="stMetricDelta"], [data-testid="stMetricDelta"] * { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+@media (max-width: 359px) { [data-testid="stMetric"] { padding: .7rem .6rem; } [data-testid="stMetricDelta"] { flex-wrap: wrap; font-size: .8rem; } }
 /* inputs and expanders on the quiet surface */
 [data-baseweb="select"] > div { background: #fff; border: 1px solid rgba(0,0,0,.25); }
 [data-testid="stExpander"] details { background: rgba(255,255,255,.55); border-radius: 12px; }

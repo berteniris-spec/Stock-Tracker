@@ -1,6 +1,6 @@
 # Project context
 
-Read this first after a session clear. Keep it under about 50 lines; history belongs in `CHANGELOG.md`. Last updated: 2026-11-09.
+Read this first after a session clear. Keep it under about 50 lines; history belongs in `CHANGELOG.md`. Last updated: 2026-11-09 (redesign).
 
 ## What this is
 Congress trades: a personal Streamlit dashboard joining US congressional stock trades to committee membership and estimated volume. SQLite, runs locally or on Streamlit Community Cloud from `main`. Public repo, no secrets, non-commercial.
@@ -34,6 +34,9 @@ Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash comma
 - Volume is a midpoint estimate of filed ranges; committee membership is a current snapshot.
 - Risk: `styles.py` targets Streamlit 1.66.x DOM (`stRadioOption`, `stMetricValue`, `stLayoutWrapper`, `stTable`, `[role="tab"]`, `st-key-*`, `st.image`). After any Streamlit upgrade run `/ui-check`. `requirements.txt` pins `streamlit>=1.66.1,<1.67`; bump it deliberately.
 
+## Redesign (2026-11-09)
+Top bar plus Settings popover, pill nav (`page` radio), search (`search`), card metrics, lighter theme (`config.toml` changed with the owner's OK), clickable ranking rows (`rank_*` containers, `open_ov_*` buttons) at all widths, party dot + word, ▲/▼ trade types, net-buying and sector charts, Member and Committee headers. The old desktop ranking tables and the `ph_ov_` swap are gone. Dark theme not yet reviewed visually.
+
 ## Open work
 - Mobile pass: steps 1 to 7 done; no step 8 is defined.
 - Owner decides whether to rename the Price tab to "Price and ratios".
@@ -47,4 +50,4 @@ Roles and the loop are in `AGENTS.md` (size the loop to the change). Slash comma
 Filings lag trades by up to 45 days. Sector is unknown for trades with no ticker. Unmapped tickers are never flagged committee-relevant. EUR uses one latest rate for all dates. UI work was checked in Chromium only (see `CHANGELOG.md` for what each step covered and skipped): not Safari, Firefox, real touch, screen readers or the deployed app. `ui_check.py` captures only the default state (USD, default basis, Settings closed).
 
 ## Next step
-Owner to pick: the small items under Open work, or the data ideas.
+Review the redesign in dark theme and on a real phone; then the small items under Open work.

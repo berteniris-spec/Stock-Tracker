@@ -154,6 +154,8 @@ def show(df, key=None, ids=None, goto=None, download=None, phone_cols=None, name
     df = df.copy()
     if "title" in df:
         df["title"] = df["title"].fillna("")
+    if "tx_type" in df:       # a symbol as well as the words: type is never colour alone
+        df["tx_type"] = df["tx_type"].map(lambda v: {"Purchase": "▲ Purchase", "Sale": "▼ Sale", "Sale (Partial)": "▼ Sale (Partial)"}.get(v, v))
     for c in MONEY_COLS + PRICE_COLS + ("pe", "forward_pe", "peg"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")      # all-missing columns arrive as None: show them blank, not "None"
@@ -295,6 +297,31 @@ _goto = st.session_state.pop("_goto", None)
 if _goto:
     st.session_state["page"], st.session_state[_goto[1]] = _goto[0], _goto[2]
 page = st.radio("View", VIEWS, key="page", horizontal=True, label_visibility="collapsed")
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def search_options():
+    """{label: (view, id)} for the global search: members, committees and tickers that have trades."""
+    c = db.connect()
+    opts = {}
+    for r in db.members_with_trades(c).itertuples():
+        opts[f"{r.name} · member"] = ("Member", r.bioguide_id)
+    for r in db.committees_with_trading(c).itertuples():
+        opts[f"{r.name} · committee"] = ("Committee", r.id)
+    for t in db.all_tickers(c):
+        opts[f"{t} · ticker"] = ("Ticker", t)
+    return opts
+
+
+def _search_go():
+    hit = search_options().get(st.session_state.get("search"))
+    if hit:
+        st.session_state["_goto"] = (hit[0], SELECT_KEYS[hit[0]], hit[1])
+    st.session_state["search"] = None
+
+
+st.selectbox("Search", list(search_options()), index=None, key="search", on_change=_search_go,
+             placeholder="Search a member, committee or ticker", label_visibility="collapsed")
 with settings_slot, st.popover("Settings", icon=":material/tune:"):
     basis = st.radio(
         "Volume basis", ["Midpoint estimate", "Filed minimum"], key="basis", horizontal=True)
@@ -395,6 +422,34 @@ if page == "Overview":
                      .sort_index(ascending=False).reset_index().rename(columns={"month": "Month"}))
             st.dataframe(table.style.format({c: sym() + "{:,.0f}" for c in table.columns if c != "Month"}),
                          hide_index=True, use_container_width=True)
+    st.subheader("Net buying per month")
+    st.caption("Purchases minus sales, by trade date. Above zero means members bought more than they sold that month.")
+    if not mv.empty:
+        net = mv.assign(sign=mv["tx_type"].map(lambda v: 1 if v == "Purchase" else (-1 if v.startswith("Sale") else 0)))
+        net = net[net["sign"] != 0].assign(net=lambda d: d["est_volume"] * d["sign"]).groupby("month", as_index=False)["net"].sum()
+        net["direction"] = net["net"].map(lambda v: "Net buying" if v >= 0 else "Net selling")
+        nchart = (alt.Chart(net).mark_bar()
+                  .encode(x=alt.X("month:O", title="Quarter (first month shown)", axis=alt.Axis(labelAngle=-45, labelOverlap=False, ticks=False, labelExpr=QUARTER_LABEL)),
+                          y=alt.Y("net:Q", title=f"Net volume ({cur})", axis=alt.Axis(format="~s")),
+                          color=alt.Color("direction:N", title="", scale=alt.Scale(domain=["Net buying", "Net selling"], range=["#0072B2", "#D55E00"]),
+                                          legend=alt.Legend(orient="bottom")),
+                          tooltip=[alt.Tooltip("month:O", title="Month"), alt.Tooltip("net:Q", title=f"Net ({cur})", format=",.0f")])
+                  .properties(height=300, padding={"top": 8, "left": 5, "right": 5, "bottom": 5}))
+        st.altair_chart(nchart, use_container_width=True)
+    st.subheader("Volume by sector")
+    sv = db.sector_volume(con)
+    if not sv.empty:
+        sv = sv.copy()
+        sv["est_volume"] = sv["est_volume"].map(conv)
+        schart = (alt.Chart(sv.head(12)).mark_bar(color="#1f3a5f")
+                  .encode(y=alt.Y("sector:N", sort="-x", title=None), x=alt.X("est_volume:Q", title=f"Estimated volume ({cur})", axis=alt.Axis(format="~s")),
+                          tooltip=[alt.Tooltip("sector:N", title="Sector"), alt.Tooltip("trades:Q", title="Trades", format=","),
+                                   alt.Tooltip("est_volume:Q", title=f"Volume ({cur})", format=",.0f")])
+                  .properties(height=max(120, 28 * min(len(sv), 12)), padding={"top": 8, "left": 5, "right": 5, "bottom": 5}))
+        st.altair_chart(schart, use_container_width=True)
+        with st.expander("Show the sector data as a table"):
+            st.dataframe(sv.rename(columns={"sector": "Sector", "trades": "Trades", "est_volume": "Volume"}).style.format({"Volume": sym() + "{:,.0f}"}),
+                         hide_index=True, use_container_width=True)
     st.subheader("Top tickers")
     top_t = db.top_tickers(con, 20)
     ranking("ov_tickers", top_t, list(top_t.columns), top_t["ticker"], ("Ticker", "ticker_sel"), "ticker",
@@ -417,6 +472,17 @@ elif page == "Member":
     sync_url("Member", bid)
     mc = db.member_committees(con, bid)
     tr = db.member_trades(con, bid)
+    both = pd.concat([members, only_paper]).drop_duplicates("bioguide_id").set_index("bioguide_id")
+    info = both.loc[bid] if bid in both.index else None
+    if info is not None:
+        pcolor = {"Republican": "red", "Democrat": "blue"}.get(str(info.get("party")), "gray")
+        chips = [f":{pcolor}-badge[{info.get('party') if _has(info.get('party')) else 'Party n/a'}]", f":gray-badge[{info.get('chamber')} · {info.get('state') or 'n/a'}]"]
+        top = [n for n in mc["name"] if ":" not in n]          # full committees; subcommittees stay in the Committees table
+        chips += [f":gray-badge[{md_esc(n.replace('House Committee on ', '').replace('Senate Committee on ', ''))}]" for n in top[:3]]
+        if len(mc) > min(len(top), 3):
+            chips.append(f":gray-badge[+{len(mc) - min(len(top), 3)} more below]")
+        st.subheader(md_esc(info["name"]))
+        st.markdown(" ".join(chips))
     mp = db.paper_filings(con, bid)
     if not mp.empty:
         st.warning(f"{len(mp)} paper filing(s) by this member are not imported, so the trades below may be "
@@ -452,6 +518,8 @@ elif page == "Committee":
     sync_url("Committee", cid)
     cm = db.committee_members(con, cid)
     tr = db.committee_trades(con, cid)
+    st.subheader(md_esc(labels[cid]))
+    st.markdown(f":gray-badge[{len(cm)} members] :gray-badge[{int((cm['trades'] > 0).sum())} with trades]")
     a, b, c = st.columns(3)
     a.metric("Members trading", int((cm["trades"] > 0).sum()))
     vol = db.volume_of(tr)
