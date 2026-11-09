@@ -659,9 +659,18 @@ else:
         if prof["kind"] != "etf":
             a, b, c = st.columns(3)
             na = "n/a"
-            a.metric("P/E", f"{prof['pe']:.1f}" if prof["pe"] else na)
-            b.metric("Fwd P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na)
-            c.metric("PEG", f"{prof['peg']:.2f}" if prof["peg"] else na)
+            a.metric("P/E", f"{prof['pe']:.1f}" if prof["pe"] else na,
+                     help="Price-to-earnings: the share price divided by the profit per share over the last 12 months. "
+                          "It is roughly how many years of today's profit you pay for. Higher means the market expects growth "
+                          "(or the stock is expensive); lower means cheaper or slower growth. Compare with similar companies: "
+                          "the long-run US market average is about 15 to 20.")
+            b.metric("Fwd P/E", f"{prof['forward_pe']:.1f}" if prof["forward_pe"] else na,
+                     help="Forward P/E: the same ratio, but using the profit analysts expect over the next 12 months. "
+                          "If it is lower than the P/E, analysts expect profits to grow; if higher, they expect them to fall.")
+            c.metric("PEG", f"{prof['peg']:.2f}" if prof["peg"] else na,
+                     help="PEG: the P/E divided by expected yearly profit growth, so fast growers are not penalised for a high P/E. "
+                          "Around 1 is often read as fairly priced for its growth, well below 1 as cheap, above 2 as expensive. "
+                          "Definitions vary by data provider, and it needs a growth estimate, so it is often missing.")
             st.caption("Ratios come from Yahoo Finance, refreshed nightly, and are shown for reference: a low or high number is not "
                        "by itself a reason to buy or sell, and sectors differ widely (compare against similar companies).")
             st.caption("P/E is price over the last 12 months of earnings, Fwd P/E uses expected earnings for the next 12 months, "

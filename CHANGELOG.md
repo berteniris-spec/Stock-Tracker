@@ -3,6 +3,10 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Ratio tooltips
+- P/E, Fwd P/E and PEG on the Ticker Price tab have plain-language tooltips (what it is, how to read higher and lower, a rough reference range). The visible captions stay, because tooltips are not reachable on touch.
+- Verified: `scripts/test.sh --smoke` 0 failures. Not checked in a browser.
+
 ## Table links
 - Member, Committee and Ticker tables now link onward. Select a row (the checkbox at its start) to open its member, committee or ticker; where a row has two (committee trades: member and ticker) one button each appears under the table. Links: Member page trades -> ticker, committees -> committee; Committee page members -> member, trades -> member and ticker; Ticker page trades -> member. A row with nothing to open (a blank ticker, a subcommittee) says so.
 - Every one of those tables also has an "Open a ... from this table" expander with a picker, which works on a phone (the compact tables cannot be selected) and with a keyboard.
