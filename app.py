@@ -452,13 +452,70 @@ if page == "Overview":
     k4.metric("Latest filing", newest_d.strftime("%d %b" if newest_d.year == pd.Timestamp.today().year else "%d %b %Y") if newest_d is not None else "n/a",
               help=f"Newest disclosure date in the data: {stats['newest']}" if stats["newest"] else None)
     vol_caption(stats["volume"], ", summed over all trades")
-    st.subheader("Most active members")
-    top_members = db.members_with_trades(con).head(25)
+    mem = db.members_with_trades(con).merge(db.member_activity(con), on="bioguide_id", how="left").fillna({"buys": 0, "sells": 0, "recent": 0})
+    rank_by = st.radio("Rank members by", ["Estimated volume", "Number of trades", "Last 90 days"], key="rank_by", horizontal=True)
+    titles = {"Estimated volume": "Biggest estimated volume", "Number of trades": "Most trades", "Last 90 days": "Traded in the last 90 days"}
+    st.subheader(titles[rank_by])
+    if rank_by == "Number of trades":
+        top_members = mem.sort_values(["trades", "est_volume"], ascending=False, kind="stable").head(25)
+    elif rank_by == "Last 90 days":
+        top_members = mem[mem["recent"] > 0].sort_values(["recent", "est_volume"], ascending=False, kind="stable").head(25)
+    else:
+        top_members = mem.head(25)                                  # already ordered by estimated volume
+
+    def buy_bar(r):
+        """Five blocks for the buy share of purchases and sales, with the numbers, so the split reads without colour."""
+        n = int(r.buys + r.sells)
+        if not n:
+            return ""
+        filled = round(5 * r.buys / n)
+        return f"{'▮' * filled}{'▯' * (5 - filled)} {int(r.buys)} buy, {int(r.sells)} sell"
+
+    def member_label(r):
+        extra = f"{int(r.recent)} in 90 days" if rank_by == "Last 90 days" else buy_bar(r)
+        return "\u00a0· ".join(x for x in (
+            md_esc(r.name) + (f" ({party_label(r.party)})" if _has(r.party) else "") if _has(r.name) else "",
+            n_trades(r.trades), md_esc(short(r.est_volume)), md_esc(extra)) if x)
+
+    if not top_members.empty:
+        st.caption("Each dot is a member: further right means more trades, higher means more estimated volume (both scales are "
+                   "logarithmic, so each step is ten times more). A dot far up and left is a few very large filed ranges; "
+                   "down and right is many small trades. Click a dot to open that member.")
+        cmp = mem.assign(volume=mem["est_volume"].map(conv), party_name=mem["party"].map(lambda p: p if _has(p) else "Other"))
+        cmp = cmp[(cmp["trades"] > 0) & (cmp["volume"] > 0)]
+        pdom = ["Democrat", "Republican", "Other"]
+        pick = alt.selection_point(name="pick", fields=["bioguide_id"], on="click", empty=False)
+        cur_m = "EUR" if CURRENCY == "EUR" and RATE else "USD"
+        scatter = (alt.Chart(cmp).mark_point(filled=True, size=90, opacity=.85, stroke="#ffffff", strokeWidth=.8)
+                   .encode(x=alt.X("trades:Q", title="Number of trades (log scale)", scale=alt.Scale(type="log", domain=[cmp["trades"].min() * 0.8, cmp["trades"].max() * 1.3]),
+                                   axis=alt.Axis(format="~s", grid=False)),
+                           y=alt.Y("volume:Q", title=f"Estimated volume ({cur_m}, log scale)",
+                                   scale=alt.Scale(type="log", domain=[cmp["volume"].min() * 0.6, cmp["volume"].max() * 1.6]),
+                                   axis=alt.Axis(format="~s", gridOpacity=.35)),
+                           color=alt.Color("party_name:N", title="Party", scale=alt.Scale(domain=pdom, range=["#0072B2", "#D55E00", "#7F7F7F"]),
+                                           legend=alt.Legend(orient="bottom", columns=3)),
+                           shape=alt.Shape("party_name:N", title="Party", scale=alt.Scale(domain=pdom, range=["circle", "square", "diamond"]),
+                                           legend=alt.Legend(orient="bottom", columns=3)),
+                           tooltip=[alt.Tooltip("name:N", title="Member"), alt.Tooltip("party_name:N", title="Party"),
+                                    alt.Tooltip("trades:Q", title="Trades", format=","), alt.Tooltip("buys:Q", title="Purchases"),
+                                    alt.Tooltip("sells:Q", title="Sales"), alt.Tooltip("volume:Q", title=f"Volume ({cur_m})", format=",.0f")])
+                   .add_params(pick).properties(height=340, padding={"top": 8, "left": 5, "right": 5, "bottom": 5}))
+        event = st.altair_chart(scatter, use_container_width=True, on_select="rerun", key="member_scatter", selection_mode="pick")
+        try:
+            chosen = (event.selection.get("pick") or [])
+        except Exception:
+            chosen = []
+        if chosen and chosen[0].get("bioguide_id") in set(mem["bioguide_id"]):
+            st.session_state["_goto"] = ("Member", "member_sel", chosen[0]["bioguide_id"])
+            st.rerun()
+        with st.expander("Show the chart data as a table"):
+            st.dataframe(cmp[["name", "party_name", "trades", "buys", "sells", "recent", "volume"]]
+                         .rename(columns={"name": "Member", "party_name": "Party", "trades": "Trades", "buys": "Purchases", "sells": "Sales",
+                                          "recent": "Last 90 days", "volume": f"Volume ({cur_m})"})
+                         .sort_values("Trades", ascending=False).style.format({f"Volume ({cur_m})": sym() + "{:,.0f}"}),
+                         hide_index=True, use_container_width=True)
     ranking("ov_members", top_members, ["name", "party", "trades", "est_volume"], top_members["bioguide_id"],
-            ("Member", "member_sel"), "member",
-            lambda r: "\u00a0· ".join(x for x in (
-                md_esc(r.name) + (f" ({party_label(r.party)})" if _has(r.party) else "") if _has(r.name) else "",
-                n_trades(r.trades), md_esc(short(r.est_volume))) if x))
+            ("Member", "member_sel"), "member", member_label)
     st.subheader("Committees by trading volume")
     top_committees = db.committees_with_trading(con).head(25)
     ranking("ov_committees", top_committees, ["name", "trades", "est_volume"], top_committees["id"],

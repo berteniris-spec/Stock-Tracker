@@ -312,6 +312,16 @@ def member_trades(con, bioguide_id):
     return df
 
 
+def member_activity(con):
+    """Per member: purchases, sales and trades in the last 90 days (by trade date), for the Overview ranking and chart."""
+    return _df(con, """
+        SELECT bioguide_id,
+               SUM(CASE WHEN tx_type = 'Purchase' THEN 1 ELSE 0 END) AS buys,
+               SUM(CASE WHEN tx_type LIKE 'Sale%' THEN 1 ELSE 0 END) AS sells,
+               SUM(CASE WHEN tx_date >= date('now', '-90 days') AND tx_date <= date('now') THEN 1 ELSE 0 END) AS recent
+        FROM trades GROUP BY bioguide_id""")
+
+
 def committee_members(con, committee_id):
     return _df(con, f"""
         SELECT m.bioguide_id, m.name, m.chamber, m.party, ms.title,

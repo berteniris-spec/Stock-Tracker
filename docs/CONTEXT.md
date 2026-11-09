@@ -6,7 +6,7 @@ Read this first after a session clear (`/resume` summarises it). Keep it under a
 Congress trades: a personal Streamlit dashboard joining US congressional stock trades to committee membership and estimated volume. SQLite, runs locally or on Streamlit Community Cloud from `main`. Public repo, no secrets, non-commercial.
 
 ## Current state
-`main` has the mobile pass (steps 1 to 7), the redesign, table links, the Ticker health check and price history. No PRs are open. Details per change are in `CHANGELOG.md`.
+`main` has the mobile pass (steps 1 to 7), the redesign, table links, the Ticker health check and price history, and the Overview member bubble chart with a rank-by switch. No PRs are open. Details per change are in `CHANGELOG.md`.
 
 ## How it fits together
 - `app.py`: the Streamlit app. Views Overview, Member, Committee, Ticker; view and id live in the URL (`?view=Ticker&id=NVDA`). Clicks go through `_goto` in session state. `styles.py`: the page CSS. `fundamentals.py`: health-check zones, headlines and range-bar HTML.

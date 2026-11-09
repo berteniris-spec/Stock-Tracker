@@ -3,6 +3,10 @@
 Newest first. Each entry lists what changed for the user and how it was verified
 (see "Development loop" in the README).
 
+## Overview: Most active members rework
+- "Most active members" now has a "Rank members by" switch (Estimated volume, Number of trades, Last 90 days) and a retitled section. Above the list is a log/log bubble chart of trades against estimated volume (blue circles Democrat, vermillion squares Republican); click a dot to open that member. A table alternative sits in an expander. Each list row shows a buy/sell bar and counts (`▮▮▮▯▯ N buy, M sell`). New query `db.member_activity`.
+- Verified: `scripts/test.sh --smoke`; Chromium at 1280 light (dot click opens the Member view) and 390 dark. Not checked: touch taps on the chart, dark at 1280.
+
 ## Table row checkboxes removed
 - The linked tables (Member, Committee, Ticker) no longer show the checkbox column: they use cell selection, so clicking any cell opens that row's member, committee or ticker (one button each when a row has two). A caption above the picker says so. Seen in dark; the same in light. The "Show all columns" and "Only ..." checkboxes are real options and stay.
 - Verified: `scripts/test.sh --smoke`; Chromium clicks on Committee members, Committee trades (two buttons) and Ticker trades in dark at 1280. Not checked: touch taps on a phone (the selectable grid shows only after "Show all columns").
